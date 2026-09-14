@@ -1,0 +1,88 @@
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
+
+export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
+export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
+export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
+
+async function request(endpoint: string, options: RequestInit = {}) {
+  const token = getAuthToken();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      removeAuthToken();
+      window.dispatchEvent(new Event('auth-expired'));
+    }
+
+    if (!response.ok) {
+      let errorMessage = 'An error occurred';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch (e) {
+        // Ignore JSON parse error on non-ok response
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
+export const api = {
+  // Auth
+  login: (data: any) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data: any) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+  me: () => request('/api/auth/me'),
+  getUsers: () => request('/api/auth/users'),
+  
+  // POS
+  bootstrap: () => request('/api/pos/bootstrap'),
+  saveSettings: (settings: any) => request('/api/pos/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+  createOrder: (data: any) => request('/api/pos/orders', { method: 'POST', body: JSON.stringify(data) }),
+  deletePosOrder: (id: string) => request(`/api/pos/orders/${id}`, { method: 'DELETE' }),
+  
+  // Menu
+  createMenuItem: (data: any) => request('/api/pos/menu-items', { method: 'POST', body: JSON.stringify(data) }),
+  updateMenuItem: (id: string | number, data: any) => request(`/api/pos/menu-items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMenuItem: (id: string | number) => request(`/api/pos/menu-items/${id}`, { method: 'DELETE' }),
+  getCategories: () => request('/api/pos/categories'),
+  
+  // Categories
+  createCategory: (data: any) => request('/api/pos/categories', { method: 'POST', body: JSON.stringify(data) }),
+  updateCategory: (id: string | number, data: any) => request(`/api/pos/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCategory: (id: string | number) => request(`/api/pos/categories/${id}`, { method: 'DELETE' }),
+  
+  // Tables
+  getTables: () => request('/api/tables'),
+  createTable: (data: any) => request('/api/tables', { method: 'POST', body: JSON.stringify(data) }),
+  updateTableStatus: (id: number, status: string, current_order_code?: string) => request(`/api/tables/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, current_order_code }) }),
+  deleteTable: (id: number) => request(`/api/tables/${id}`, { method: 'DELETE' }),
+  getPublicMenu: (code: string) => fetch(`${API_BASE_URL}/api/tables/menu/${code}`, { cache: 'no-store' }).then(res => res.json()),
+  
+  // KOT
+  getKot: (status?: string) => request(`/api/kot${status ? `?status=${status}` : ''}`),
+  
+  // Orders
+  getDineOrders: (status?: string) => request(`/api/dineorders${status ? `?status=${status}` : ''}`),
+  
+  // Customers
+  getCustomers: () => request('/api/customers'),
+  
+  // Expenses
+  getExpenses: () => request('/api/posexpenses'),
+};
