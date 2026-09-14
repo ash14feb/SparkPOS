@@ -142,7 +142,11 @@ export function POSView() {
         total,
         paymentMode,
         customerName,
-        customerPhone
+        customerPhone,
+        store: settings?.businessName || settings?.restaurantName || 'Intelli POS',
+        receiptHeader: settings?.receiptHeader || '',
+        receiptFooter: settings?.receiptFooter || '',
+        currency: settings?.currencySymbol || 'Rs.'
       };
       
       await api.createOrder(orderPayload);

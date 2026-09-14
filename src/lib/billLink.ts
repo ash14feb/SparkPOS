@@ -111,7 +111,7 @@ export function mapApiBillToBillData(b: any, fallbackStore = 'Intelli POS', fall
       return d as BillLinkData; // already compact shape
     }
     return {
-      s: d.store || d.restaurantName || fallbackStore,
+      s: d.store || d.restaurantName || d.businessName || fallbackStore,
       h: d.header || d.receiptHeader,
       f: d.footer || d.receiptFooter,
       id: String(d.id || d.order_code || d.orderId || ''),
