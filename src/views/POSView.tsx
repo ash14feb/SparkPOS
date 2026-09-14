@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 import { toBlob } from 'html-to-image';
+import { connectBtPrinter, printReceiptBle, getBtPrinter, disconnectBtPrinter } from '../lib/bluetoothPrinter';
 
 export function POSView() {
   const { menuItems, categories, fetchBootstrap, cart, addToCart, removeFromCart, updateQuantity, clearCart, isLoading, settings } = usePosStore();
@@ -25,23 +26,24 @@ export function POSView() {
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [showWhatsAppPreview, setShowWhatsAppPreview] = useState(false);
   const [btConnected, setBtConnected] = useState(false); 
+  const [btName, setBtName] = useState('');
   const [showPrinterModal, setShowPrinterModal] = useState(false);
 
   const connectBluetooth = async () => {
     try {
-      if (!navigator.bluetooth) {
-        toast.error('Web Bluetooth is not supported on this device/browser');
-        return;
-      }
-      const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+      const p = await connectBtPrinter(() => {
+        setBtConnected(false);
+        setBtName('');
+        toast.error('Bluetooth printer disconnected');
       });
       setBtConnected(true);
+      setBtName(p.device?.name || 'Printer');
       setShowPrinterModal(false);
-      toast.success(`Connected to ${device.name || 'Printer'}`);
+      toast.success(`Connected to ${p.device?.name || 'Printer'}`);
     } catch (err: any) {
-      toast.error('Bluetooth connection failed or cancelled');
+      // User cancelling the picker throws NotFoundError — don't show scary error
+      if (err?.name === 'NotFoundError') return;
+      toast.error(err?.message || 'Bluetooth connection failed or cancelled');
     }
   };
 
@@ -151,9 +153,24 @@ export function POSView() {
       setCompletedOrder(orderPayload);
       
       if (!skipPrint) {
-        // Mock printReceipt call
-        console.log("Printing receipt for order...", orderPayload);
-        toast.success('Receipt sent to printer');
+        try {
+          await printReceiptBle({
+            store: settings?.restaurantName || 'Intelli POS',
+            header: settings?.receiptHeader,
+            footer: settings?.receiptFooter,
+            orderId: orderPayload.id,
+            date: new Date(orderPayload.timestamp).toLocaleString(),
+            items: cart.map(c => ({ name: c.name, qty: c.quantity, price: Number(c.price) || 0 })),
+            subtotal, discount: discountVal, total,
+            currency: settings?.currencySymbol || 'Rs.',
+          });
+          toast.success('Receipt sent to printer');
+        } catch (printErr: any) {
+          console.error('BLE print failed', printErr);
+          // Fall back to system print dialog so the sale isn't blocked
+          toast.error(printErr?.message || 'Print failed — showing system print dialog instead');
+          window.print();
+        }
       }
       
       setShowSuccess(true);
