@@ -26,6 +26,7 @@ import { KDSView } from './views/KDSView';
 import { SettingsView } from './views/SettingsView';
 import { PublicMenuView } from './views/PublicMenuView';
 import { InventoryView } from './views/InventoryView';
+import { BillView } from './views/BillView';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -59,6 +60,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<AuthView />} />
         <Route path="/menu/:code" element={<PublicMenuView />} />
+        <Route path="/bill" element={<BillView />} />
+        <Route path="/bill/:orderId" element={<BillView />} />
         
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -72,6 +75,7 @@ export default function App() {
           <Route path="/expenses" element={<ExpensesView />} />
           <Route path="/reports" element={<GenericView title="Reports & Analytics" icon={BarChart3} />} />
           <Route path="/settings" element={<SettingsView />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

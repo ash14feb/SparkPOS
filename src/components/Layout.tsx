@@ -13,9 +13,15 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  Bluetooth,
+  Printer
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
+import { usePosStore } from '../store/usePosStore';
+import { usePrinterStore } from '../store/usePrinterStore';
+import { connectBtPrinter } from '../lib/bluetoothPrinter';
+import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 
 const navItems = [
@@ -33,6 +39,8 @@ const navItems = [
 
 export function Layout() {
   const { logout, user } = useAuthStore();
+  const { settings } = usePosStore();
+  const { btConnected, setBt } = usePrinterStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -48,21 +56,59 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+    <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
       {/* Mobile Top Bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 z-40 shadow-sm">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center px-4 z-40 shadow-sm">
+        <button 
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="p-2 -ml-2 mr-2 text-gray-600 hover:text-gray-900 focus:outline-none"
+          aria-label="Open menu"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
         <NavLink to="/dashboard" className="flex items-center">
           <div className="h-8 w-8 bg-brand-500 rounded-lg flex items-center justify-center mr-3 shadow-sm">
             <span className="text-white font-display font-bold text-xl leading-none">S</span>
           </div>
           <h1 className="font-display font-bold text-xl tracking-tight text-dark-900">SPARKPOS</h1>
         </NavLink>
-        <button 
-          onClick={() => setIsMobileMenuOpen(true)}
-          className="p-2 -mr-2 text-gray-600 hover:text-gray-900 focus:outline-none"
-        >
-          <Menu className="w-6 h-6" />
-        </button>
+        {/* Bluetooth printer shortcut — only on POS, saves the old title row */}
+        {location.pathname === '/pos' && (
+          <div className="ml-auto flex items-center">
+            {settings?.printerConnectionType === 'usb' ? (
+              <div className="flex items-center px-2.5 py-1.5 rounded-full text-[11px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+                <Printer className="w-3.5 h-3.5 mr-1" />
+                USB
+              </div>
+            ) : (
+              <button
+                onClick={async () => {
+                  if (btConnected) return;
+                  try {
+                    const p = await connectBtPrinter(() => {
+                      setBt(false, '');
+                      toast.error('Bluetooth printer disconnected');
+                    });
+                    setBt(true, p.device?.name || 'Printer');
+                    toast.success(`Connected to ${p.device?.name || 'Printer'}`);
+                  } catch (err: any) {
+                    if (err?.name === 'NotFoundError') return;
+                    toast.error(err?.message || 'Bluetooth connection failed');
+                  }
+                }}
+                title={btConnected ? 'Bluetooth Printer Connected' : 'Connect Bluetooth Printer'}
+                className={cn(
+                  'flex items-center p-2 rounded-full text-xs font-bold border transition-colors',
+                  btConnected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-red-50 text-red-700 border-red-200'
+                )}
+              >
+                <Bluetooth className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Mobile Backdrop */}
@@ -133,7 +179,7 @@ export function Layout() {
       </aside>
       
       <main className={cn(
-        "flex-1 flex flex-col relative overflow-hidden pt-16 md:pt-0 md:pb-0",
+        "flex-1 flex flex-col relative overflow-hidden min-h-0 pt-16 md:pt-0 md:pb-0",
         location.pathname !== '/pos' ? "pb-16" : "pb-0"
       )}>
         <Outlet />

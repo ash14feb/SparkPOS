@@ -82,6 +82,14 @@ export const api = {
   
   // Customers
   getCustomers: () => request('/api/customers'),
+
+  // Public bill fetch (no auth — opened on the customer's phone).
+  // Requires backend: GET /api/pos/bills/:orderId -> { success, data: bill }
+  getPublicBill: (orderId: string) =>
+    fetch(`${API_BASE_URL}/api/pos/bills/${encodeURIComponent(orderId)}`, { cache: 'no-store' }).then(async (res) => {
+      if (!res.ok) throw new Error('Bill not found');
+      return res.json();
+    }),
   
   // Expenses
   getExpenses: () => request('/api/posexpenses'),

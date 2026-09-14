@@ -8,8 +8,8 @@ export function InventoryView() {
   const [activeTab, setActiveTab] = useState<'inventory' | 'categories'>('inventory');
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden pb-16 md:pb-0">
-      <div className="bg-white p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm z-10">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-gray-50 overflow-hidden">
+      <div className="bg-white p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm z-10 shrink-0">
         <div className="flex items-center">
           <Package className="w-8 h-8 text-brand-600 mr-3 hidden sm:block" />
           <div>
@@ -46,7 +46,7 @@ export function InventoryView() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 sm:p-6 custom-scrollbar">
+      <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 custom-scrollbar no-chain-scroll">
         {activeTab === 'inventory' ? <MenuManager /> : <CategoriesManager />}
       </div>
     </div>

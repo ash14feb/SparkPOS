@@ -5,7 +5,9 @@ import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 import { toBlob } from 'html-to-image';
+import { buildBillLink, buildShortBillLink, normalizePhone } from '../lib/billLink';
 import { connectBtPrinter, printReceiptBle, getBtPrinter, disconnectBtPrinter } from '../lib/bluetoothPrinter';
+import { usePrinterStore } from '../store/usePrinterStore';
 
 export function POSView() {
   const { menuItems, categories, fetchBootstrap, cart, addToCart, removeFromCart, updateQuantity, clearCart, isLoading, settings } = usePosStore();
@@ -25,19 +27,16 @@ export function POSView() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [showWhatsAppPreview, setShowWhatsAppPreview] = useState(false);
-  const [btConnected, setBtConnected] = useState(false); 
-  const [btName, setBtName] = useState('');
+  const { btConnected, btName, setBt } = usePrinterStore();
   const [showPrinterModal, setShowPrinterModal] = useState(false);
 
   const connectBluetooth = async () => {
     try {
       const p = await connectBtPrinter(() => {
-        setBtConnected(false);
-        setBtName('');
+        setBt(false, '');
         toast.error('Bluetooth printer disconnected');
       });
-      setBtConnected(true);
-      setBtName(p.device?.name || 'Printer');
+      setBt(true, p.device?.name || 'Printer');
       setShowPrinterModal(false);
       toast.success(`Connected to ${p.device?.name || 'Printer'}`);
     } catch (err: any) {
@@ -114,8 +113,6 @@ export function POSView() {
         if (newItem) updateQuantity(newItem.cartId, qty);
       }
     }
-    // Small haptic-like toast on mobile
-    if (window.innerWidth < 1024) toast.success(`Added ${item.name}`, { duration: 1000, position: 'bottom-center' });
   };
 
   const processOrder = async (skipPrint: boolean = false) => {
@@ -192,7 +189,7 @@ export function POSView() {
     setDiscount('');
     setPaymentMode('CASH');
     setMobileView('menu');
-    fetchBootstrap();
+    // No refetch — just close the popup so POS stays instant
   };
 
   const handlePrintKOT = () => {
@@ -201,7 +198,7 @@ export function POSView() {
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden bg-gray-50 relative">
+    <div className="flex-1 flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-gray-50 relative overscroll-none">
       {/* Printer Modal */}
       {showPrinterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
@@ -320,42 +317,45 @@ export function POSView() {
                       toast.error('Failed to generate bill image');
                       return;
                     }
-                    
-                    const file = new File([blob], `bill_${completedOrder.id}.png`, { type: 'image/png' });
-                    const text = `Thank you for your order at ${settings?.restaurantName || 'Intelli POS'}!\nOrder: ${completedOrder.id}\nTotal: ${settings?.currencySymbol || 'Rs.'}${completedOrder.total.toFixed(2)}`;
-                    
-                    toast.dismiss(loadingToast);
-                    
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                      try {
-                        await navigator.share({
-                          files: [file],
-                          title: `Bill ${completedOrder.id}`,
-                          text: text
-                        });
-                      } catch (err: any) {
-                        if (err.name !== 'AbortError') {
-                          toast.error('Error sharing image');
-                        }
-                      }
-                    } else {
-                      // Fallback: download image and open WhatsApp link
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `bill_${completedOrder.id}.png`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                      
-                      toast.success('Bill image downloaded.');
-                      
-                      setTimeout(() => {
-                        const phoneUrl = completedOrder.customerPhone ? `${completedOrder.customerPhone}` : '';
-                        window.open(`https://wa.me/${phoneUrl}?text=${encodeURIComponent(text)}`, '_blank');
-                      }, 500);
+
+                    const storeName = settings?.restaurantName || 'Intelli POS';
+                    const billData = {
+                      s: storeName,
+                      h: settings?.receiptHeader,
+                      f: settings?.receiptFooter,
+                      id: completedOrder.id,
+                      ts: completedOrder.timestamp,
+                      items: completedOrder.items.map((i: any) => ({ n: i.name, q: i.qty, p: Number(i.price) || 0 })),
+                      sub: completedOrder.subtotal,
+                      disc: completedOrder.discount,
+                      tot: completedOrder.total,
+                      cur: settings?.currencySymbol || 'Rs.',
+                      pm: completedOrder.paymentMode,
+                    };
+                    // Short link by order id — verify the backend can serve it
+                    // publicly; otherwise fall back to the self-contained link.
+                    let link = buildShortBillLink(completedOrder.id);
+                    try {
+                      await api.getPublicBill(completedOrder.id);
+                    } catch {
+                      link = await buildBillLink(billData);
                     }
+                    const text = `Thank you for visiting ${storeName}!\nOrder: ${completedOrder.id}\nTotal: ${settings?.currencySymbol || 'Rs.'}${completedOrder.total.toFixed(2)}\nClick on the link to download your bill:\n${link}`;
+
+                    // Copy bill image to clipboard so it can be pasted in the chat.
+                    let copied = false;
+                    try {
+                      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                      copied = true;
+                    } catch {}
+                    toast.dismiss(loadingToast);
+
+                    if (copied) {
+                      toast.success('Bill image copied — paste it in WhatsApp chat', { duration: 4000 });
+                    }
+
+                    const phone = normalizePhone(completedOrder.customerPhone);
+                    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
                   } catch (err) {
                     toast.dismiss(loadingToast);
                     console.error('Error generating image', err);
@@ -377,8 +377,9 @@ export function POSView() {
         mobileView === 'menu' ? "flex" : "hidden lg:flex"
       )}>
         {/* Header & Search */}
-        <div className="bg-white p-4 border-b border-gray-100 flex flex-col shadow-sm z-10 gap-3 shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="bg-white px-3 py-2 sm:p-4 border-b border-gray-100 flex flex-col shadow-sm z-10 gap-2 sm:gap-3 shrink-0">
+          {/* Title row: desktop only — on mobile the BT icon lives in the top header */}
+          <div className="hidden lg:flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">
               Point of Sale <span className="text-gray-400 font-normal text-sm ml-2 hidden sm:inline">- {settings?.restaurantName || 'Intelli POS'}</span>
             </h1>
@@ -442,8 +443,8 @@ export function POSView() {
         </div>
 
         {/* Menu Grid */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 custom-scrollbar">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-4 pb-24 lg:pb-4 custom-scrollbar no-chain-scroll">
+          <div className="grid grid-cols-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-4">
             {isLoading ? (
               Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-start animate-pulse">
@@ -462,78 +463,84 @@ export function POSView() {
               filteredItems.map(item => {
                 const outOfStock = settings?.enableStock && !settings?.allowSaleWhenOutOfStock && (item.stock || 0) <= 0;
                 const cartItem = cart.find(c => c.id === item.id);
-                
+                const displayName = item.name ? item.name.charAt(0).toUpperCase() + item.name.slice(1) : item.name;
+                const dec = (cartId: string, qty: number) => {
+                  if (qty > 1) updateQuantity(cartId, qty - 1);
+                  else removeFromCart(cartId);
+                };
+
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => handleAddToCart(item, 1)}
-                    disabled={outOfStock}
+                    onClick={() => { if (!outOfStock) handleAddToCart(item, 1); }}
                     className={cn(
-                      "bg-white p-3 rounded-2xl border shadow-sm transition-all flex flex-col items-start text-left relative group",
-                      outOfStock ? "opacity-50 grayscale border-gray-200 cursor-not-allowed" : "border-gray-100 hover:shadow-md hover:border-brand-300 active:scale-95"
+                      "bg-white p-1.5 sm:p-3 rounded-xl border shadow-sm transition-all flex flex-col items-stretch text-left relative group select-none",
+                      outOfStock ? "opacity-50 grayscale border-gray-200" : "border-gray-100 hover:shadow-md hover:border-brand-300 active:scale-[0.97] cursor-pointer"
                     )}
                   >
-                    <div className="w-full aspect-[4/3] bg-gray-50 rounded-xl mb-3 overflow-hidden flex items-center justify-center relative">
+                    <div className="w-full aspect-square bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center relative">
                       {item.image ? (
                         <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       ) : (
-                        <div className="w-12 h-12 bg-brand-100 rounded-full flex items-center justify-center text-brand-600 font-display font-bold text-xl">
-                          {item.name.charAt(0)}
+                        <div className="w-9 h-9 sm:w-12 sm:h-12 bg-brand-100 rounded-full flex items-center justify-center text-brand-600 font-display font-bold text-lg">
+                          {item.name.charAt(0).toUpperCase()}
                         </div>
                       )}
-                      
-                      {/* Mobile Price Overlay */}
-                      <div className="sm:hidden absolute bottom-2 right-2 bg-black/75 text-white text-xs font-bold px-2 py-1 rounded-md backdrop-blur-sm z-10 shadow-sm">
+
+                      {/* Qty stepper mini-bar on top of thumbnail when in cart */}
+                      {cartItem && !outOfStock && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute top-1 left-1 right-1 flex items-center justify-between bg-black/70 backdrop-blur-sm rounded-lg px-1 py-0.5 z-10"
+                        >
+                          <button
+                            onClick={() => dec(cartItem.cartId, cartItem.quantity)}
+                            className="w-5 h-5 flex items-center justify-center rounded-md bg-white/20 text-white hover:bg-white/40"
+                            aria-label="Decrease"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-white text-[11px] font-bold px-1">{cartItem.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(cartItem.cartId, cartItem.quantity + 1)}
+                            className="w-5 h-5 flex items-center justify-center rounded-md bg-white/20 text-white hover:bg-white/40"
+                            aria-label="Increase"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Small + button on thumbnail */}
+                      {!outOfStock && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAddToCart(item, 1); }}
+                          className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-md hover:bg-brand-700 active:scale-90 z-10"
+                          aria-label={`Add ${item.name}`}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Price overlay */}
+                      <div className="absolute bottom-1 left-1 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm z-10 shadow-sm">
                         {settings?.currencySymbol || '₹'}{Number(item.price || 0).toFixed(0)}
                       </div>
-                      
-                      {settings?.enableStock && (
-                        <span className={cn(
-                          "absolute top-2 right-2 sm:bottom-2 sm:top-auto sm:right-2 text-[10px] font-bold px-2 py-1 rounded-md shadow-sm flex items-center backdrop-blur-md",
-                          outOfStock ? "bg-red-500/90 text-white" : "bg-emerald-500/90 text-white"
-                        )}>
-                          <Package className="w-3 h-3 sm:mr-1" />
-                          <span className="hidden sm:inline">{item.stock} left</span>
-                          <span className="sm:hidden ml-1">{item.stock}</span>
-                        </span>
-                      )}
-                      
+
                       {outOfStock && (
                         <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center">
-                          <span className="bg-red-600 text-white px-3 py-1 text-xs font-bold rounded-full shadow-sm">
+                          <span className="bg-red-600 text-white px-2 py-0.5 text-[10px] font-bold rounded-full shadow-sm">
                             OUT OF STOCK
                           </span>
                         </div>
                       )}
                     </div>
-                    
-                    <h3 className="font-medium text-gray-900 text-sm leading-tight mb-1 line-clamp-2">{item.name}</h3>
-                    <p className="hidden sm:block font-display font-bold text-brand-600 mt-auto">
+
+                    <h3 className="font-medium text-gray-900 text-[11px] sm:text-sm leading-tight mt-1 line-clamp-1 px-0.5">{displayName}</h3>
+                    <p className="hidden sm:block font-display font-bold text-brand-600 text-sm px-0.5">
                       {settings?.currencySymbol || 'Rs.'} {Number(item.price || 0).toFixed(2)}
                     </p>
-                    
-                    {/* Cart Overlay Badges */}
-                    {cartItem && !outOfStock && (
-                      <>
-                        <div className="absolute -top-2 -right-2 w-7 h-7 bg-blue-600 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md shadow-blue-500/30 z-10 animate-in zoom-in">
-                          {cartItem.quantity}
-                        </div>
-                        <div 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (cartItem.quantity > 1) {
-                              updateQuantity(cartItem.cartId, cartItem.quantity - 1);
-                            } else {
-                              removeFromCart(cartItem.cartId);
-                            }
-                          }}
-                          className="absolute -top-2 -left-2 w-7 h-7 bg-red-100 text-red-600 hover:bg-red-500 hover:text-white transition-colors rounded-full flex items-center justify-center shadow-sm z-10 opacity-0 group-hover:opacity-100"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </div>
-                      </>
-                    )}
-                  </button>
+                  </div>
                 )
               })
             )}
@@ -543,8 +550,11 @@ export function POSView() {
 
       {/* Right side - Cart */}
       <div className={cn(
-        "w-full lg:w-[420px] xl:w-[480px] bg-white lg:border-l border-gray-200 flex-col shadow-2xl z-20 h-full shrink-0",
-        mobileView === 'cart' ? "flex absolute inset-0 lg:static lg:flex" : "hidden lg:flex"
+        "w-full lg:w-[420px] xl:w-[480px] bg-white lg:border-l border-gray-200 flex-col shadow-2xl z-20 shrink-0 min-h-0",
+        // Mobile: fixed below the top bar and sized to the *dynamic* viewport
+        // so Pay buttons are never hidden behind Chrome's URL bar.
+        // Desktop: normal flex column filling parent height.
+        mobileView === 'cart' ? "flex fixed inset-x-0 top-16 bottom-0 h-[calc(100dvh-4rem)] lg:static lg:h-full lg:top-auto lg:bottom-auto" : "hidden lg:flex lg:h-full"
       )}>
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white shrink-0 pt-safe">
           <div className="flex items-center">
@@ -582,7 +592,7 @@ export function POSView() {
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4 custom-scrollbar no-chain-scroll">
           <div className="space-y-2">
             {cart.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center text-gray-400 space-y-4">
@@ -684,8 +694,8 @@ export function POSView() {
           )}
         </div>
 
-        {/* Fixed Checkout Bottom */}
-        <div className="border-t border-gray-200 bg-white shrink-0">
+        {/* Fixed Checkout Bottom — always visible above browser chrome */}
+        <div className="sticky bottom-0 border-t border-gray-200 bg-white shrink-0 pb-safe">
           <div className="p-4 pb-3">
             <div className="flex justify-between items-end border-b border-gray-100 pb-3 mb-3">
               <span className="text-gray-900 font-bold">Total Amount</span>
@@ -757,20 +767,25 @@ export function POSView() {
 
       {/* Mobile View Toggle (Only shown when on Menu view) */}
       <div className={cn(
-        "lg:hidden fixed bottom-0 left-0 right-0 bg-transparent p-2 flex flex-col items-center z-30 pb-safe pointer-events-none",
+        "lg:hidden fixed bottom-0 inset-x-0 px-2 pt-2 pb-safe flex flex-col items-center z-30 pointer-events-none",
         mobileView === 'cart' ? "hidden" : "flex"
       )}>
         {mobileView === 'menu' && cart.length > 0 && (
           <button 
             onClick={() => setMobileView('cart')}
-            className="w-full mb-2 bg-brand-600 text-white p-4 rounded-xl font-bold flex items-center justify-between shadow-xl shadow-brand-500/30 pointer-events-auto"
+            className="w-full bg-brand-600 text-white p-4 rounded-xl font-bold flex items-center justify-between shadow-xl shadow-brand-500/30 pointer-events-auto"
           >
             <div className="flex items-center">
-              <span className="bg-white/20 px-3 py-1 rounded-lg mr-3 text-sm">{cart.length} Items</span>
               <span className="text-lg">{settings?.currencySymbol || 'Rs.'}{total.toFixed(2)}</span>
             </div>
             <span className="flex items-center text-sm uppercase tracking-wider">
-              View Cart <ShoppingCart className="w-5 h-5 ml-2" />
+              View Cart
+              <span className="relative ml-2">
+                <ShoppingCart className="w-5 h-5" />
+                <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow">
+                  {cart.reduce((n, c) => n + c.quantity, 0)}
+                </span>
+              </span>
             </span>
           </button>
         )}

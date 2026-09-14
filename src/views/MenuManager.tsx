@@ -337,7 +337,7 @@ export function MenuManager() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4">
         {filteredItems.map(item => {
           const isOutOfStock = settings.enableStock && !settings.allowSaleWhenOutOfStock && (item.stock || 0) <= 0;
           
