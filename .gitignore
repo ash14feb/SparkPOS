@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+/.vs/SparkPOS/v17
+/.vs/SparkPOS/FileContentIndex
+/.vs/SparkPOS/CopilotIndices/17.14.1431.25910
+/.vs/SparkPOS/config
