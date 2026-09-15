@@ -1,7 +1,16 @@
 import { useState } from 'react';
-import { UserRound, KeyRound, LogOut, Save, Palette, Check } from 'lucide-react';
+import { UserRound, KeyRound, LogOut, Save, Palette, Check, LayoutGrid } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useThemeStore, THEMES } from '../store/useThemeStore';
+import {
+  usePosGridStore,
+  DEFAULT_MOBILE_COLS,
+  DEFAULT_DESKTOP_COLS,
+  MOBILE_MIN,
+  MOBILE_MAX,
+  DESKTOP_MIN,
+  DESKTOP_MAX,
+} from '../store/usePosGridStore';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
@@ -9,6 +18,9 @@ import { cn } from '../lib/utils';
 export function ProfileView() {
   const { user, updateProfile, changePassword, logout } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
+  const { mobileCols, desktopCols, setMobileCols, setDesktopCols } = usePosGridStore();
+  const [mobileInput, setMobileInput] = useState(mobileCols === null ? '' : String(mobileCols));
+  const [desktopInput, setDesktopInput] = useState(desktopCols === null ? '' : String(desktopCols));
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'details' | 'password'>('details');
@@ -50,6 +62,25 @@ export function ProfileView() {
     } finally {
       setIsChanging(false);
     }
+  };
+
+  const mobileNum = mobileInput.trim() === '' ? null : Number(mobileInput);
+  const desktopNum = desktopInput.trim() === '' ? null : Number(desktopInput);
+  const mobileError =
+    mobileNum === null ? ''
+    : !Number.isInteger(mobileNum) || mobileNum < MOBILE_MIN || mobileNum > MOBILE_MAX
+    ? `Mobile must be ${MOBILE_MIN}–${MOBILE_MAX}` : '';
+  const desktopError =
+    desktopNum === null ? ''
+    : !Number.isInteger(desktopNum) || desktopNum < DESKTOP_MIN || desktopNum > DESKTOP_MAX
+    ? `Desktop must be ${DESKTOP_MIN}–${DESKTOP_MAX}` : '';
+
+  const handleSaveGrid = () => {
+    if (mobileError) return toast.error(mobileError);
+    if (desktopError) return toast.error(desktopError);
+    setMobileCols(mobileNum);
+    setDesktopCols(desktopNum);
+    toast.success('POS grid updated');
   };
 
   const handleLogout = () => {
@@ -149,6 +180,39 @@ export function ProfileView() {
                     </button>
                   ))}
                 </div>
+              </div>
+              {/* POS items per row */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-base font-bold text-gray-900 mb-1 flex items-center">
+                  <LayoutGrid className="w-5 h-5 mr-2 text-brand-600" /> POS Items per Row
+                </h2>
+                <p className="text-sm text-gray-500 mb-4">Leave empty to use defaults (Mobile {DEFAULT_MOBILE_COLS}, Desktop {DEFAULT_DESKTOP_COLS}).</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile View ({MOBILE_MIN}–{MOBILE_MAX})</label>
+                    <input
+                      type="number" inputMode="numeric" min={MOBILE_MIN} max={MOBILE_MAX} step={1}
+                      value={mobileInput} onChange={(e) => setMobileInput(e.target.value)}
+                      placeholder={`Default ${DEFAULT_MOBILE_COLS}`}
+                      className={cn('w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500', mobileError ? 'border-red-400' : 'border-gray-300')}
+                    />
+                    {mobileError ? <p className="text-xs text-red-600 mt-1">{mobileError}</p> : null}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Desktop View ({DESKTOP_MIN}–{DESKTOP_MAX})</label>
+                    <input
+                      type="number" inputMode="numeric" min={DESKTOP_MIN} max={DESKTOP_MAX} step={1}
+                      value={desktopInput} onChange={(e) => setDesktopInput(e.target.value)}
+                      placeholder={`Default ${DEFAULT_DESKTOP_COLS}`}
+                      className={cn('w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500', desktopError ? 'border-red-400' : 'border-gray-300')}
+                    />
+                    {desktopError ? <p className="text-xs text-red-600 mt-1">{desktopError}</p> : null}
+                  </div>
+                </div>
+                <button onClick={handleSaveGrid}
+                  className="mt-4 flex items-center justify-center px-6 py-2.5 bg-brand-600 text-white font-medium rounded-lg hover:bg-brand-700 transition-colors">
+                  <Save className="w-4 h-4 mr-2" /> Save Grid Settings
+                </button>
               </div>
             </>
           )}

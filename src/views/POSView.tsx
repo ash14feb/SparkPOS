@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { usePosStore, MenuItem } from '../store/usePosStore';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, ShoppingCart, ListCollapse, X, Package, Printer, CheckCircle2, Loader2, Bluetooth, Share2, FileText, ArrowLeft } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, ShoppingCart, ListCollapse, X, Package, Printer, CheckCircle2, Loader2, Bluetooth, Share2, FileText, ArrowLeft, UtensilsCrossed, ShoppingBag, Armchair, Check, ScanLine } from 'lucide-react';
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
@@ -8,9 +8,24 @@ import { toBlob } from 'html-to-image';
 import { buildBillLink, buildShortBillLink, normalizePhone } from '../lib/billLink';
 import { connectBtPrinter, printReceiptBle, getBtPrinter, disconnectBtPrinter } from '../lib/bluetoothPrinter';
 import { usePrinterStore } from '../store/usePrinterStore';
+import { BarcodeScannerModal } from '../components/BarcodeScanner';
+import { usePosGridStore, effectiveMobileCols, effectiveDesktopCols } from '../store/usePosGridStore';
 
 export function POSView() {
   const { menuItems, categories, fetchBootstrap, cart, addToCart, removeFromCart, updateQuantity, clearCart, isLoading, settings } = usePosStore();
+  const { mobileCols, desktopCols } = usePosGridStore();
+  // Items-per-row follows Profile settings (lg breakpoint = desktop).
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const gridCols = isDesktop ? effectiveDesktopCols(desktopCols) : effectiveMobileCols(mobileCols);
+  // E-Bill mode: no physical printing — Pay & Print is hidden, Pay Only is the full flow.
+  const isEbill = settings?.printerConnectionType === 'ebill';
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileView, setMobileView] = useState<'menu' | 'cart'>('menu');
@@ -20,15 +35,122 @@ export function POSView() {
   // Checkout State
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [paymentMode, setPaymentMode] = useState('');
   const [discount, setDiscount] = useState<number | string>('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingPay, setPendingPay] = useState<{ skipPrint: boolean } | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [showWhatsAppPreview, setShowWhatsAppPreview] = useState(false);
   const { btConnected, btName, setBt } = usePrinterStore();
   const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Dine-in / Takeaway (default FOOD: DB default is FOOD; only RETAIL hides it,
+  // so a failed settings fetch never silently disables the workflow).
+  // API tables use snake_case `table_no` — normalize once for all labels/payloads.
+  const tableLabel = (t: any) => t?.table_no ?? t?.tableNo ?? t?.no ?? t?.name ?? (t?.id ?? '—');
+  const tableIdOf = (t: any) => t?.id ?? t?.tableId ?? t?.table_id;
+  const tableStatusOf = (t: any) => String(t?.status || t?.tableStatus || (t?.isOccupied ? 'OCCUPIED' : 'FREE')).toUpperCase();
+  // OCCUPIED (saved), HAVING_FOOD (served) and CUSTOMER_ORDERED (self-ordered)
+  // all mean "active table".
+  const isTableActive = (t: any) => ['OCCUPIED', 'HAVING_FOOD', 'CUSTOMER_ORDERED'].includes(tableStatusOf(t));
+  const tableStatusLabel = (t: any) => tableStatusOf(t) === 'HAVING_FOOD' ? 'HAVING FOOD' : tableStatusOf(t) === 'CUSTOMER_ORDERED' ? 'CUSTOMER ORDERED' : tableStatusOf(t);
+  const businessType = String(settings?.businessType || '').toUpperCase();
+  // Dine-in is a strict opt-in: FOOD + "Dine-In Available? YES". Default NO.
+  const dineInEnabled = settings?.dineInEnabled === true || settings?.dineInEnabled === 1;
+  const isFood = businessType.includes('FOOD') && dineInEnabled;
+  const [orderType, setOrderType] = useState<'DINEIN' | 'TAKEAWAY'>('TAKEAWAY');
+  const isDineInFlow = isFood && orderType === 'DINEIN';
+  const [tables, setTables] = useState<any[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<any | null>(null);
+  const [activeOrderCode, setActiveOrderCode] = useState<string | null>(null);
+  const [served, setServed] = useState(false);
+  const [serveProgress, setServeProgress] = useState(0);
+  const serveDragging = useRef(false);
+  const serveTrackRef = useRef<HTMLDivElement>(null);
+
+  const fetchTables = async () => {
+    try {
+      setTablesLoading(true);
+      const res = await api.getTables();
+      const list = res?.data || res?.tables || res || [];
+      setTables(Array.isArray(list) ? list : []);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to load tables');
+    } finally {
+      setTablesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isFood && orderType === 'DINEIN') fetchTables();
+  }, [isFood, orderType]);
+
+  // Auto-refresh tables + live order while in DINEIN so a customer re-order
+  // (table flips back to CUSTOMER_ORDERED, order ACTIVE) re-enables
+  // swipe-to-serve without manual refresh.
+  useEffect(() => {
+    if (!isFood || orderType !== 'DINEIN') return;
+    const id = setInterval(async () => {
+      try {
+        const res = await api.getTables();
+        const list = res?.data || res?.tables || res || [];
+        if (Array.isArray(list)) {
+          setTables(list);
+          window.dispatchEvent(new Event('sparkpos:tables-changed'));
+        }
+      } catch { /* silent */ }
+      try {
+        if (activeOrderCode && selectedTable) {
+          const tid = tableIdOf(selectedTable);
+          if (tid) {
+            const ord = (await api.getTableActiveOrder(tid))?.data || null;
+            if (ord) {
+              const isServed = String(ord.orderStatus || '').toUpperCase() === 'SERVED';
+              setServed(isServed);
+              if (!isServed) setServeProgress(0);
+              setSelectedTable((prev: any) => (prev ? { ...prev, status: isServed ? 'HAVING_FOOD' : 'CUSTOMER_ORDERED' } : prev));
+            }
+          }
+        }
+      } catch { /* silent */ }
+    }, 10000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFood, orderType, activeOrderCode, selectedTable?.id]);
+
+  // Deep link from Tables screen: /pos?table=<id> opens that table's flow.
+  useEffect(() => {
+    if (!isFood) return;
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get('table');
+    if (!tid) return;
+    (async () => {
+      try {
+        const res = await api.getTables();
+        const list = res?.data || res?.tables || res || [];
+        const arr = Array.isArray(list) ? list : [];
+        const t = arr.find((x: any) => String(x.id) === String(tid));
+        if (t) {
+          setOrderType('DINEIN');
+          await handleSelectTable(t);
+          window.history.replaceState(null, '', window.location.pathname + '#/pos');
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFood]);
+
+  const resetDineState = () => {
+    setSelectedTable(null);
+    setActiveOrderCode(null);
+    setServed(false);
+    setServeProgress(0);
+    fetchTables();
+  };
 
   const connectBluetooth = async () => {
     try {
@@ -117,6 +239,7 @@ export function POSView() {
 
   const processOrder = async (skipPrint: boolean = false) => {
     if (cart.length === 0) return toast.error('Cart is empty');
+    const dinePayFlow = isFood && orderType === 'DINEIN' && activeOrderCode;
     
     // Printer checks
     if (settings?.printerConnectionType === 'bluetooth' && !btConnected && !skipPrint) {
@@ -131,7 +254,7 @@ export function POSView() {
     try {
       setIsSubmitting(true);
       
-      const orderPayload = {
+      const orderPayload: any = {
         id: `INV-${Date.now()}`,
         timestamp: Date.now(),
         items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, image: c.image, category: c.category, qty: c.quantity })),
@@ -146,10 +269,21 @@ export function POSView() {
         store: settings?.businessName || settings?.restaurantName || 'Intelli POS',
         receiptHeader: settings?.receiptHeader || '',
         receiptFooter: settings?.receiptFooter || '',
-        currency: settings?.currencySymbol || 'Rs.'
+        currency: settings?.currencySymbol || 'Rs.',
+        orderType: isFood ? orderType : undefined,
+        tableId: isFood && orderType === 'DINEIN' && selectedTable ? tableIdOf(selectedTable) : undefined,
+        tableNo: isFood && orderType === 'DINEIN' && selectedTable ? tableLabel(selectedTable) : undefined,
       };
       
-      await api.createOrder(orderPayload);
+      if (dinePayFlow && activeOrderCode) {
+        await api.updateOrder(activeOrderCode, { ...orderPayload, orderStatus: 'PAID', paymentMode });
+        try {
+          const tid = selectedTable?.id ?? selectedTable?.tableId;
+          if (tid !== undefined) await api.updateTableStatus(Number(tid), 'FREE');
+        } catch {}
+      } else {
+        await api.createOrder(orderPayload);
+      }
       
       setCompletedOrder(orderPayload);
       
@@ -184,6 +318,143 @@ export function POSView() {
     }
   };
 
+  const handleUpdateDineIn = async () => {
+    if (!activeOrderCode) return toast.error('No active table order');
+    if (cart.length === 0) return toast.error('Cart is empty');
+    try {
+      setIsSubmitting(true);
+      await api.updateOrder(activeOrderCode, {
+        items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, image: c.image, category: c.category, qty: c.quantity })),
+        subtotal, discount: discountVal, cgst, sgst, total,
+        paymentMode,
+        orderStatus: 'ACTIVE',
+      });
+      // Order changed after serve => must swipe to serve again; table back to OCCUPIED.
+      const tid = tableIdOf(selectedTable);
+      if (tid) {
+        try { await api.updateTableStatus(Number(tid), 'OCCUPIED', activeOrderCode); } catch {}
+        setSelectedTable((prev: any) => (prev ? { ...prev, status: 'OCCUPIED' } : prev));
+      }
+      setServed(false);
+      setServeProgress(0);
+      toast.success(`Order ${activeOrderCode} updated for Table ${tableLabel(selectedTable)} — swipe to serve again`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update order');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveDineIn = async () => {
+    if (cart.length === 0) return toast.error('Cart is empty');
+    if (!selectedTable) return toast.error('Select a table first');
+    try {
+      setIsSubmitting(true);
+      const tid = tableIdOf(selectedTable);
+      const payload: any = {
+        id: `INV-${Date.now()}`,
+        timestamp: Date.now(),
+        items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, image: c.image, category: c.category, qty: c.quantity })),
+        subtotal, discount: discountVal, cgst, sgst, total,
+        paymentMode, customerName, customerPhone,
+        store: settings?.businessName || settings?.restaurantName || 'Intelli POS',
+        currency: settings?.currencySymbol || 'Rs.',
+        orderType: 'DINEIN', tableId: tid,
+        tableNo: tableLabel(selectedTable),
+        orderStatus: 'ACTIVE',
+      };
+      const res = await api.createOrder(payload);
+      const orderId = res?.data?.orderCode || res?.data?.id || res?.orderCode || payload.id;
+      try { await api.updateTableStatus(Number(tid), 'OCCUPIED', orderId); } catch {}
+      setCompletedOrder({ ...payload, id: orderId });
+      toast.success(`Order saved for Table ${payload.tableNo}`);
+      clearCart();
+      setCustomerName(''); setCustomerPhone(''); setDiscount('');
+      resetDineState();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save order');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSelectTable = async (t: any) => {
+    const status = tableStatusOf(t);
+    const tid = t.id ?? t.tableId;
+    if (!isTableActive(t)) {
+      setSelectedTable(t);
+      setActiveOrderCode(null);
+      setServed(false);
+      setServeProgress(0);
+      setCustomerName('');
+      setCustomerPhone('');
+      clearCart();
+      return;
+    }
+    // Occupied-table resume
+    try {
+      setIsSubmitting(true);
+      const res = await api.getTableActiveOrder(tid);
+      const ord = res?.data;
+      setSelectedTable(t);
+      if (!ord) {
+        toast('No active order on this table — starting fresh', { icon: '🍽️' });
+        setActiveOrderCode(null);
+        setServed(false);
+        setCustomerName('');
+        setCustomerPhone('');
+        clearCart();
+        return;
+      }
+      const code = ord.orderCode || ord.id || ord.code;
+      setActiveOrderCode(code || null);
+      setServed(String(ord.orderStatus || '').toUpperCase() === 'SERVED');
+      // Customer self-ordered via public menu — carry name/phone into POS.
+      setCustomerName(ord.customerName || ord.customer_name || '');
+      setCustomerPhone(ord.customerPhone || ord.customer_phone || ord.phone || '');
+      // Populate cart
+      clearCart();
+      const rawItems: any[] = ord.items || [];
+      rawItems.forEach((ri: any) => {
+        const qty = Number(ri.qty ?? ri.quantity ?? 1);
+        const match = menuItems.find(m => String(m.id) === String(ri.id) || m.name?.toLowerCase() === String(ri.name || '').toLowerCase());
+        if (match) {
+          addToCart(match);
+          const added = usePosStore.getState().cart.find(c => c.id === match.id);
+          if (added && qty > 1) updateQuantity(added.cartId, qty);
+          else if (added && qty <= 0) removeFromCart(added.cartId);
+        } else {
+          addToCart({ id: Number(ri.id) || Date.now(), name: ri.name || 'Item', price: Number(ri.price) || 0, category: ri.category || 'Uncategorized', image: ri.image } as MenuItem, qty);
+        }
+      });
+      toast.success(`Resumed order ${code}`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to load table order');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleServeComplete = async () => {
+    if (!activeOrderCode) return;
+    try {
+      try { await api.updateDineOrderStatus(activeOrderCode, 'SERVED'); }
+      catch { await api.updateOrder(activeOrderCode, { orderStatus: 'SERVED' }); }
+      // Table lifecycle: served order => Having Food.
+      const tid = tableIdOf(selectedTable);
+      if (tid) {
+        try { await api.updateTableStatus(Number(tid), 'HAVING_FOOD', activeOrderCode); } catch {}
+        setSelectedTable((prev: any) => (prev ? { ...prev, status: 'HAVING_FOOD' } : prev));
+      }
+      setServed(true);
+      setServeProgress(100);
+      toast.success('Order Served');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to mark served');
+      setServeProgress(0);
+    }
+  };
+
   const handleResetAfterSuccess = () => {
     setShowSuccess(false);
     setCompletedOrder(null);
@@ -191,8 +462,11 @@ export function POSView() {
     setCustomerName('');
     setCustomerPhone('');
     setDiscount('');
-    setPaymentMode('CASH');
+    setPaymentMode('');
     setMobileView('menu');
+    if (isFood && orderType === 'DINEIN') {
+      resetDineState();
+    }
     // No refetch — just close the popup so POS stays instant
   };
 
@@ -237,6 +511,61 @@ export function POSView() {
           </div>
         </div>
       )}
+      {/* Pay confirmation (amount + mode) */}
+      {pendingPay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Payment</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {pendingPay.skipPrint ? (isEbill ? 'Pay' : 'Pay Only') : 'Pay & Print'}
+              {isDineInFlow && selectedTable ? ` · Table ${tableLabel(selectedTable)}` : ''}
+            </p>
+            <div className="bg-gray-50 border border-gray-100 rounded-xl py-4 mb-4">
+              <div className="font-display text-3xl font-bold text-brand-600">
+                {settings?.currencySymbol || 'Rs.'}{total.toFixed(2)}
+              </div>
+              <div className="mt-1">
+                <span className={cn(
+                  'inline-block px-3 py-0.5 text-xs font-bold rounded-full uppercase',
+                  paymentMode === 'CASH' ? 'bg-emerald-100 text-emerald-700' :
+                  paymentMode === 'UPI' ? 'bg-purple-100 text-purple-700' :
+                  'bg-blue-100 text-blue-700'
+                )}>
+                  {paymentMode}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">{cart.reduce((n, c) => n + c.quantity, 0)} item(s)</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingPay(null)}
+                disabled={isSubmitting}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { const p = pendingPay; setPendingPay(null); processOrder(p.skipPrint); }}
+                disabled={isSubmitting || cart.length === 0}
+                className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Barcode Scanner (fills search on scan, with beep) */}
+      {showScanner && (
+        <BarcodeScannerModal
+          isOpen={showScanner}
+          onClose={() => setShowScanner(false)}
+          onScan={(code) => {
+            setSearchQuery(code);
+            toast.success(`Scanned: ${code}`);
+          }}
+        />
+      )}
 
       {/* Success Modal */}
       {showSuccess && completedOrder && !showWhatsAppPreview && (
@@ -244,7 +573,10 @@ export function POSView() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 flex flex-col items-center">
             <CheckCircle2 className="w-20 h-20 text-green-500 mb-4 animate-bounce" />
             <h2 className="text-2xl font-bold text-gray-900">Order Success!</h2>
-            <p className="text-gray-500 mt-1 mb-6">Payment: <span className="font-bold text-gray-900">{completedOrder.paymentMode}</span></p>
+            <p className="text-gray-500 mt-1 mb-1">Payment: <span className="font-bold text-gray-900">{completedOrder.paymentMode}</span></p>
+            {completedOrder.orderType && (
+              <p className="text-gray-500 mb-5 text-sm">Order Type: <span className="font-bold text-gray-900">{completedOrder.orderType === 'DINEIN' ? 'DINE IN' : 'TAKE AWAY'}</span>{completedOrder.tableNo ? ` • Table ${completedOrder.tableNo}` : ''}</p>
+            )}
             
             <div className="grid grid-cols-3 gap-3 w-full mb-6">
               <button onClick={() => toast.success('Printing bill...')} className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-3 rounded-xl border border-gray-200 transition-colors">
@@ -285,6 +617,7 @@ export function POSView() {
               <div className="text-center mb-4 border-b border-dashed border-gray-300 pb-4">
                 <h3 className="font-bold text-lg">{settings?.restaurantName || 'Intelli POS'}</h3>
                 <p className="text-xs text-gray-500">Order: {completedOrder.id}</p>
+                {completedOrder.orderType && <p className="text-xs text-gray-500">Order Type: {completedOrder.orderType === 'DINEIN' ? 'DINE IN' : 'TAKE AWAY'}{completedOrder.tableNo ? ` • Table ${completedOrder.tableNo}` : ''}</p>}
                 <p className="text-xs text-gray-500">{new Date(completedOrder.timestamp).toLocaleString()}</p>
               </div>
               <div className="space-y-2 mb-4">
@@ -396,7 +729,12 @@ export function POSView() {
               Point of Sale <span className="text-gray-400 font-normal text-sm ml-2 hidden sm:inline">- {settings?.restaurantName || 'Intelli POS'}</span>
             </h1>
             <div className="flex items-center space-x-2">
-              {settings?.printerConnectionType === 'usb' ? (
+              {isEbill ? (
+                <div className="flex items-center px-3 py-1.5 rounded-full text-xs font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                  <FileText className="w-3.5 h-3.5 mr-1.5" />
+                  E-Bill
+                </div>
+              ) : settings?.printerConnectionType === 'usb' ? (
                 <div className="flex items-center px-3 py-1.5 rounded-full text-xs font-bold border bg-blue-50 text-blue-700 border-blue-200">
                   <Printer className="w-3.5 h-3.5 mr-1.5" />
                   USB Ready
@@ -417,22 +755,53 @@ export function POSView() {
               )}
             </div>
           </div>
+          {isFood && (
+            <>
+            <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
+              <button
+                onClick={() => { setOrderType('DINEIN'); clearCart(); setServed(false); setActiveOrderCode(null); setServeProgress(0); }}
+                className={cn("flex items-center justify-center py-2.5 rounded-lg font-bold text-sm transition-all", orderType === 'DINEIN' ? "bg-white text-gray-900 shadow" : "text-gray-500 hover:text-gray-700")}
+              >
+                <UtensilsCrossed className="w-4 h-4 mr-2" /> DINE IN
+              </button>
+              <button
+                onClick={() => { setOrderType('TAKEAWAY'); setSelectedTable(null); setActiveOrderCode(null); setServed(false); }}
+                className={cn("flex items-center justify-center py-2.5 rounded-lg font-bold text-sm transition-all", orderType === 'TAKEAWAY' ? "bg-white text-gray-900 shadow" : "text-gray-500 hover:text-gray-700")}
+              >
+                <ShoppingBag className="w-4 h-4 mr-2" /> TAKE AWAY
+              </button>
+            </div>
+            {orderType === 'DINEIN' && selectedTable && (
+              <div className="flex items-center justify-between bg-orange-50 border border-orange-200 text-orange-800 px-3 py-2 rounded-xl text-sm font-bold">
+                <span>DINE IN — TABLE {tableLabel(selectedTable)}{activeOrderCode ? ` • ${activeOrderCode}` : ''}</span>
+                <button onClick={() => { setSelectedTable(null); setActiveOrderCode(null); setServed(false); clearCart(); fetchTables(); }} className="text-xs underline font-medium">Change</button>
+              </div>
+            )}
+            </>
+          )}
           
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative w-full sm:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input 
-                type="text" 
-                placeholder="Search items by name or barcode..." 
+              <input
+                type="text"
+                placeholder="Search items by name or barcode..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500/20 focus:bg-white focus:border-brand-500 transition-all text-gray-900 placeholder-gray-400"
+                className="w-full pl-10 pr-16 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500/20 focus:bg-white focus:border-brand-500 transition-all text-gray-900 placeholder-gray-400"
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <button onClick={() => setSearchQuery('')} className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   <X className="w-4 h-4" />
                 </button>
               )}
+              <button
+                onClick={() => setShowScanner(true)}
+                title="Scan barcode"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+              >
+                <ScanLine className="w-5 h-5" />
+              </button>
             </div>
             
             <div className="flex space-x-2 overflow-x-auto custom-scrollbar pb-1 flex-1">
@@ -456,7 +825,44 @@ export function POSView() {
 
         {/* Menu Grid */}
         <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-4 pb-24 lg:pb-4 custom-scrollbar no-chain-scroll">
-          <div className="grid grid-cols-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-4">
+          {isFood && orderType === 'DINEIN' && !selectedTable ? (
+            <div>
+              <h3 className="font-bold text-gray-900 mb-3 flex items-center"><Armchair className="w-5 h-5 mr-2" /> Select a Table</h3>
+              {tablesLoading ? (
+                <p className="text-gray-500 text-sm">Loading tables...</p>
+              ) : (
+                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                  {tables.map((t: any) => {
+                    const st = tableStatusOf(t);
+                    const havingFood = st === 'HAVING_FOOD';
+                    const customerOrdered = st === 'CUSTOMER_ORDERED';
+                    const occupied = st === 'OCCUPIED' || havingFood || customerOrdered;
+                    const no = tableLabel(t);
+                    return (
+                      <button
+                        key={t.id ?? no}
+                        onClick={() => handleSelectTable(t)}
+                        className={cn(
+                          "p-4 rounded-xl border-2 font-bold text-center transition-all",
+                          customerOrdered ? "bg-yellow-50 border-yellow-400 text-yellow-800 hover:bg-yellow-100"
+                          : havingFood ? "bg-orange-50 border-orange-400 text-orange-700 hover:bg-orange-100"
+                            : occupied ? "bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+                            : "bg-green-50 border-green-300 text-green-700 hover:bg-green-100"
+                        )}
+                      >
+                        <div className="text-2xl mb-1">{customerOrdered ? '🟡' : occupied ? (havingFood ? '🟠' : '🔴') : '🟢'}</div>
+                        <div className="text-sm">Table {no}</div>
+                        <div className="text-[11px] font-medium">{customerOrdered ? 'CUSTOMER ORDERED' : havingFood ? 'HAVING FOOD' : occupied ? 'OCCUPIED' : 'FREE'}</div>
+                      </button>
+                    );
+                  })}
+                  {tables.length === 0 && <p className="text-gray-500 text-sm col-span-full">No tables found.</p>}
+                </div>
+              )}
+            </div>
+          ) : (
+          <div className={cn(isFood && orderType === 'DINEIN' && !selectedTable && "pointer-events-none opacity-40")}>
+          <div className="grid gap-2 sm:gap-4" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
             {isLoading ? (
               Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-start animate-pulse">
@@ -499,28 +905,20 @@ export function POSView() {
                         </div>
                       )}
 
-                      {/* Qty stepper mini-bar on top of thumbnail when in cart */}
+                      {/* Qty badge top-right + minus top-left when in cart */}
                       {cartItem && !outOfStock && (
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute top-1 left-1 right-1 flex items-center justify-between bg-black/70 backdrop-blur-sm rounded-lg px-1 py-0.5 z-10"
-                        >
+                        <>
                           <button
-                            onClick={() => dec(cartItem.cartId, cartItem.quantity)}
-                            className="w-5 h-5 flex items-center justify-center rounded-md bg-white/20 text-white hover:bg-white/40"
+                            onClick={(e) => { e.stopPropagation(); dec(cartItem.cartId, cartItem.quantity); }}
+                            className="absolute top-1 left-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/70 text-white backdrop-blur-sm hover:bg-black/90 z-10"
                             aria-label="Decrease"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="text-white text-[11px] font-bold px-1">{cartItem.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(cartItem.cartId, cartItem.quantity + 1)}
-                            className="w-5 h-5 flex items-center justify-center rounded-md bg-white/20 text-white hover:bg-white/40"
-                            aria-label="Increase"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
+                          <span className="absolute top-1 right-1 min-w-[20px] h-5 px-1 rounded-md bg-red-600 text-white text-[11px] font-bold flex items-center justify-center shadow z-10">
+                            {cartItem.quantity}
+                          </span>
+                        </>
                       )}
 
                       {/* Small + button on thumbnail */}
@@ -535,7 +933,7 @@ export function POSView() {
                       )}
 
                       {/* Price overlay */}
-                      <div className="absolute bottom-1 left-1 bg-black/75 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm z-10 shadow-sm">
+                      <div className="absolute bottom-1 left-1 bg-black/75 text-white text-xs sm:text-sm font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm z-10 shadow-sm">
                         {settings?.currencySymbol || '₹'}{Number(item.price || 0).toFixed(0)}
                       </div>
 
@@ -557,6 +955,8 @@ export function POSView() {
               })
             )}
           </div>
+          </div>
+          )}
         </div>
       </div>
 
@@ -566,7 +966,7 @@ export function POSView() {
         // Mobile: fixed below the top bar and sized to the *dynamic* viewport
         // so Pay buttons are never hidden behind Chrome's URL bar.
         // Desktop: normal flex column filling parent height.
-        mobileView === 'cart' ? "flex fixed inset-x-0 top-16 bottom-0 h-[calc(100dvh-4rem)] lg:static lg:h-full lg:top-auto lg:bottom-auto" : "hidden lg:flex lg:h-full"
+        mobileView === 'cart' ? "flex fixed inset-x-0 top-16 bottom-16 h-[calc(100dvh-8rem)] lg:static lg:h-full lg:top-auto lg:bottom-auto" : "hidden lg:flex lg:h-full"
       )}>
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white shrink-0 pt-safe">
           <div className="flex items-center">
@@ -717,15 +1117,19 @@ export function POSView() {
             </div>
 
             <div className="grid grid-cols-3 gap-2 mb-3 bg-gray-100 p-1 rounded-xl">
-              {['CASH', 'UPI', 'CARD'].map(mode => (
-                <button 
+              {[
+                { mode: 'CASH', active: 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30' },
+                { mode: 'UPI', active: 'bg-purple-600 text-white shadow-md shadow-purple-600/30' },
+                { mode: 'CARD', active: 'bg-blue-600 text-white shadow-md shadow-blue-600/30' },
+              ].map(({ mode, active }) => (
+                <button
                   key={mode}
                   onClick={() => setPaymentMode(mode)}
                   className={cn(
-                    "flex items-center justify-center py-2 rounded-lg text-xs sm:text-sm font-bold transition-all shadow-sm",
-                    paymentMode === mode 
-                      ? "bg-white text-gray-900 shadow-sm border-none" 
-                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50 border border-transparent shadow-none"
+                    "flex items-center justify-center py-2 rounded-lg text-xs sm:text-sm font-bold transition-all",
+                    paymentMode === mode
+                      ? active
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50 border border-transparent"
                   )}
                 >
                   {mode === 'CASH' && <Banknote className="w-3.5 h-3.5 mr-1 sm:mr-1.5" />}
@@ -736,6 +1140,58 @@ export function POSView() {
               ))}
             </div>
             
+            {isFood && orderType === 'DINEIN' && (
+              <div className="mb-3 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 text-xs font-bold text-orange-800">
+                DINE IN — TABLE {tableLabel(selectedTable)}{activeOrderCode ? ` • ${activeOrderCode}` : ''}
+              </div>
+            )}
+            {isFood && orderType === 'DINEIN' && activeOrderCode && !served && (
+              <div className="mb-3">
+                <div
+                  ref={serveTrackRef}
+                  className="relative h-12 bg-gray-100 rounded-xl overflow-hidden select-none touch-none border border-gray-200"
+                  onPointerMove={(e) => {
+                    if (!serveDragging.current || !serveTrackRef.current) return;
+                    const rect = serveTrackRef.current.getBoundingClientRect();
+                    const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+                    setServeProgress(pct);
+                  }}
+                  onPointerUp={() => {
+                    serveDragging.current = false;
+                    if (serveProgress > 85) handleServeComplete();
+                    else setServeProgress(0);
+                  }}
+                  onPointerLeave={() => { if (serveDragging.current) { serveDragging.current = false; setServeProgress(0); } }}
+                >
+                  <div className="absolute inset-0 bg-emerald-500 transition-all" style={{ width: `${serveProgress}%` }} />
+                  <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-gray-600">Swipe to Serve →</span>
+                  <div
+                    className="absolute top-1 bottom-1 w-12 bg-white rounded-lg shadow flex items-center justify-center cursor-grab font-bold"
+                    style={{ left: `calc(${serveProgress}% - ${serveProgress * 0.48}px + 4px)` }}
+                    onPointerDown={(e) => { serveDragging.current = true; (e.target as HTMLElement).setPointerCapture?.(e.pointerId); }}
+                  >→</div>
+                </div>
+              </div>
+            )}
+            {isFood && orderType === 'DINEIN' && served && (
+              <div className="mb-3 flex items-center justify-center gap-2 text-emerald-700 font-bold text-sm bg-emerald-50 border border-emerald-200 rounded-xl py-2">
+                <Check className="w-4 h-4" /> ✓ Order Served
+              </div>
+            )}
+            {isFood && orderType === 'DINEIN' && activeOrderCode && (
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={handleUpdateDineIn}
+                  disabled={cart.length === 0 || isSubmitting}
+                  className="flex-1 flex items-center justify-center py-2.5 px-2 rounded-xl bg-white border border-brand-300 text-brand-700 font-bold hover:bg-brand-50 transition-all text-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update Order (Save)'}
+                </button>
+              </div>
+            )}
+            {cart.length > 0 && !paymentMode && (
+              <p className="mb-2 text-center text-xs font-bold text-amber-600">Select a payment mode above to enable Pay</p>
+            )}
             <div className="flex gap-2">
               {settings?.enableKot && (
                 <button 
@@ -749,29 +1205,41 @@ export function POSView() {
                 </button>
               )}
               
-              <button 
-                onClick={() => processOrder(true)}
-                disabled={cart.length === 0 || isSubmitting || settings?.orderAfterBill}
+              {!settings?.orderAfterBill && (!isDineInFlow || isEbill) && (
+              <button
+                onClick={() => setPendingPay({ skipPrint: true })}
+                disabled={cart.length === 0 || isSubmitting || !paymentMode || (isDineInFlow && (!selectedTable || !activeOrderCode || !served))}
                 className={cn(
-                  "flex-1 flex items-center justify-center py-3.5 px-2 rounded-xl font-bold transition-all text-sm sm:text-base",
-                  settings?.orderAfterBill 
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed hidden" 
-                    : "bg-white border border-brand-200 text-brand-700 hover:bg-brand-50"
+                  "flex items-center justify-center py-3.5 px-2 rounded-xl font-bold transition-all text-sm sm:text-base",
+                  isEbill
+                    ? "flex-[1.5] bg-brand-600 text-white hover:bg-brand-700 shadow-md shadow-brand-500/20"
+                    : "flex-1 bg-white border border-brand-200 text-brand-700 hover:bg-brand-50"
                 )}
               >
-                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Pay Only'}
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : isEbill ? 'Pay' : 'Pay Only'}
               </button>
-              <button 
-                onClick={() => processOrder(false)}
-                disabled={cart.length === 0 || isSubmitting}
+              )}
+              {isFood && orderType === 'DINEIN' && !activeOrderCode ? (
+                <button
+                  onClick={handleSaveDineIn}
+                  disabled={cart.length === 0 || isSubmitting || !selectedTable}
+                  className="flex-[1.5] flex items-center justify-center py-3.5 px-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-700 transition-all shadow-md shadow-brand-500/20 text-sm sm:text-base disabled:opacity-50"
+                >
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Only'}
+                </button>
+              ) : !isEbill ? (
+              <button
+                onClick={() => setPendingPay({ skipPrint: false })}
+                disabled={cart.length === 0 || isSubmitting || !paymentMode || (isFood && orderType === 'DINEIN' && (!selectedTable || !activeOrderCode || !served))}
                 className={cn(
                   "flex-[1.5] flex items-center justify-center py-3.5 px-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-700 transition-all shadow-md shadow-brand-500/20 text-sm sm:text-base",
                   settings?.orderAfterBill && "flex-1"
                 )}
               >
                 {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Printer className="w-5 h-5 mr-1.5 sm:mr-2" />}
-                Pay & Print
+                {isFood && orderType === 'DINEIN' ? 'Pay & Print' : 'Pay & Print'}
               </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -779,7 +1247,7 @@ export function POSView() {
 
       {/* Mobile View Toggle (Only shown when on Menu view) */}
       <div className={cn(
-        "lg:hidden fixed bottom-0 inset-x-0 px-2 pt-2 pb-safe flex flex-col items-center z-30 pointer-events-none",
+        "lg:hidden fixed bottom-16 inset-x-0 px-2 pt-2 pb-safe flex flex-col items-center z-30 pointer-events-none",
         mobileView === 'cart' ? "hidden" : "flex"
       )}>
         {mobileView === 'menu' && cart.length > 0 && (

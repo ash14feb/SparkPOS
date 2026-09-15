@@ -1,5 +1,5 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
-
+//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
 export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
 export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
 export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
@@ -66,6 +66,8 @@ export const api = {
   bootstrap: () => request('/api/pos/bootstrap'),
   saveSettings: (settings: any) => request('/api/pos/settings', { method: 'PUT', body: JSON.stringify(settings) }),
   createOrder: (data: any) => request('/api/pos/orders', { method: 'POST', body: JSON.stringify(data) }),
+  updateOrder: (code: string, data: any) => request(`/api/pos/orders/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getTableActiveOrder: (tableId: string | number) => request(`/api/pos/tables/${tableId}/active-order`),
   deletePosOrder: (id: string) => request(`/api/pos/orders/${id}`, { method: 'DELETE' }),
   
   // Menu
@@ -85,12 +87,19 @@ export const api = {
   updateTableStatus: (id: number, status: string, current_order_code?: string) => request(`/api/tables/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, current_order_code }) }),
   deleteTable: (id: number) => request(`/api/tables/${id}`, { method: 'DELETE' }),
   getPublicMenu: (code: string) => fetch(`${API_BASE_URL}/api/tables/menu/${code}`, { cache: 'no-store' }).then(res => res.json()),
+  placeTableOrder: (code: string, data: any) =>
+    fetch(`${API_BASE_URL}/api/tables/order/${code}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Could not place order');
+      return body;
+    }),
   
   // KOT
   getKot: (status?: string) => request(`/api/kot${status ? `?status=${status}` : ''}`),
   
   // Orders
   getDineOrders: (status?: string) => request(`/api/dineorders${status ? `?status=${status}` : ''}`),
+  updateDineOrderStatus: (code: string, status: string) => request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
   
   // Customers
   getCustomers: () => request('/api/customers'),

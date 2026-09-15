@@ -50,7 +50,7 @@ export function SettingsView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden pb-16 md:pb-0">
+    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="bg-white p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm z-10">
         <div className="flex items-center">
           {activeTab ? (
@@ -143,21 +143,55 @@ export function SettingsView() {
                     { id: 'RETAIL', label: 'Retail / Non-Food', desc: 'Standard retail checkout' },
                     { id: 'SERVICES', label: 'Services', desc: 'Appointments and hourly' },
                     { id: 'GENERAL', label: 'General / Other', desc: 'Standard POS workflow' }
-                  ].map(type => (
+                  ].map(type => {
+                    const selected = settings.businessType === type.id;
+                    return (
                     <button
                       key={type.id}
                       onClick={() => handleChange('businessType', type.id)}
                       className={cn(
                         "flex flex-col items-start p-4 border rounded-xl transition-all text-left",
-                        settings.businessType === type.id 
-                          ? "border-brand-500 bg-brand-50 shadow-sm" 
+                        selected
+                          ? "border-brand-500 bg-brand-50 shadow-sm"
                           : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       )}
                     >
                       <span className="font-semibold text-gray-900 mb-1">{type.label}</span>
                       <span className="text-sm text-gray-500">{type.desc}</span>
+                      {type.id === 'FOOD' && selected && (
+                        <span
+                          className="mt-3 w-full border-t border-brand-200 pt-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span className="block text-sm font-semibold text-gray-900 mb-0.5">Dine-In Available?</span>
+                          <span className="block text-xs text-gray-500 mb-2">YES shows Dine-In in POS + Tables tab. NO means takeaway only.</span>
+                          <span className="flex items-center bg-gray-200 p-1 rounded-lg w-fit" role="group" aria-label="Dine-In available">
+                            {(['NO', 'YES'] as const).map(opt => {
+                              const on = (settings.dineInEnabled ? 'YES' : 'NO') === opt;
+                              return (
+                                <span
+                                  key={opt}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => { e.stopPropagation(); handleChange('dineInEnabled', opt === 'YES'); }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleChange('dineInEnabled', opt === 'YES'); } }}
+                                  className={cn(
+                                    'px-5 py-1.5 text-sm font-bold rounded-md transition-all cursor-pointer',
+                                    on && opt === 'YES' && 'bg-emerald-600 text-white shadow-sm',
+                                    on && opt === 'NO' && 'bg-gray-500 text-white shadow-sm',
+                                    !on && 'text-gray-500 hover:text-gray-700'
+                                  )}
+                                >
+                                  {opt}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        </span>
+                      )}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -315,10 +349,11 @@ export function SettingsView() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Printer Connection Type</label>
                     <select
-                      value={settings.printerConnectionType || 'bluetooth'}
+                      value={settings.printerConnectionType || 'ebill'}
                       onChange={(e) => handleChange('printerConnectionType', e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
                     >
+                      <option value="ebill">E-Bill (no printing)</option>
                       <option value="bluetooth">Web Bluetooth</option>
                       <option value="usb">System Print Dialog (USB)</option>
                     </select>

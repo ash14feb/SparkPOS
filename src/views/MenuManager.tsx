@@ -19,21 +19,46 @@ export function MenuManager() {
   const [showScanner, setShowScanner] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Bulk selection (tap a card to select; edit/delete buttons are exempt)
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [showCategoryPopup, setShowCategoryPopup] = useState(false);
+  const [isBulkWorking, setIsBulkWorking] = useState(false);
 
-  const [formData, setFormData] = useState<Partial<MenuItem>>({
-    name: '',
-    price: 0,
-    category: '',
-    image: '',
-    barcode: '',
-    stock: 0
-  });
+  const EMPTY_FORM: Partial<MenuItem> = { name: '', price: 0, category: '', image: '', barcode: '', stock: 0, mrp: null, unit: 'NONE', description: '', dietaryType: 'NONE', hsnSac: '', taxRate: 0, purchasePrice: null, wholesalePrice: null, minWholesaleQty: null, portionSize: '', stockInDate: '', lowStockAlert: null, variants: [] };
+  const [formData, setFormData] = useState<Partial<MenuItem>>(EMPTY_FORM);
+  const UNITS = ['NONE','BAG','BOX','BTL','BUC','CARATS','CARTONS','DOZENS','GMS','KG','KW'];
+  const UNIT_LABELS: Record<string,string> = { NONE: 'None', BAG: 'BAG (Bags)', BOX: 'BOX', BTL: 'BTL (Bottle)', BUC: 'BUC (Buckets)', CARATS: 'Carats', CARTONS: 'Cartons', DOZENS: 'Dozens', GMS: 'Gms', KG: 'Kg', KW: 'kW' };
+  const TAX_RATES = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28];
+  const PORTIONS = ['Regular','Medium','Large','Half','Full','Serves 1-3','Serves 4-6'];
+  const VARIANT_TYPES = ['SIZE','PORTION','QUANTITY','SERVING','CUSTOM'];
+  const set = (p: Partial<MenuItem>) => setFormData((prev) => ({ ...prev, ...p }));
+  const resetForm = () => setFormData({ ...EMPTY_FORM });
 
   const filteredItems = menuItems.filter(item => 
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     item.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.barcode?.includes(searchTerm)
   );
+
+  // Group items under category headings (store category order first)
+  const groupedSections: { category: string; items: MenuItem[] }[] = (() => {
+    const groups = new Map<string, MenuItem[]>();
+    for (const item of filteredItems) {
+      const key = item.category || 'Uncategorized';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
+    const order = categories.map((c: any) => c.name);
+    return [...groups.entries()]
+      .sort((a, b) => {
+        const ia = order.indexOf(a[0]);
+        const ib = order.indexOf(b[0]);
+        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+      })
+      .map(([category, items]) => ({ category, items }));
+  })();
 
   const handleQuickAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +80,7 @@ export function MenuManager() {
   };
 
   const handleEdit = (item: MenuItem) => {
-    setFormData(item);
+    setFormData({ ...EMPTY_FORM, ...item });
     setIsEditing(true);
   };
 
@@ -71,6 +96,54 @@ export function MenuManager() {
     } finally {
       setIsDeleting(false);
       setItemToDelete(null);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setBulkCategory('');
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setIsBulkWorking(true);
+      await Promise.all(selectedIds.map((id) => api.deleteMenuItem(id)));
+      toast.success(`${selectedIds.length} item(s) deleted`);
+      clearSelection();
+      fetchBootstrap();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete items');
+    } finally {
+      setIsBulkWorking(false);
+      setShowBulkDelete(false);
+    }
+  };
+
+  const handleBulkCategory = async () => {
+    if (selectedIds.length === 0 || !bulkCategory) {
+      return toast.error('Select items and a category');
+    }
+    try {
+      setIsBulkWorking(true);
+      await Promise.all(
+        selectedIds.map((id) => {
+          const item = menuItems.find((m) => m.id === id);
+          return api.updateMenuItem(id, { ...(item || {}), category: bulkCategory });
+        })
+      );
+      toast.success(`${selectedIds.length} item(s) moved to ${bulkCategory}`);
+      clearSelection();
+      setShowCategoryPopup(false);
+      fetchBootstrap();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update category');
+    } finally {
+      setIsBulkWorking(false);
     }
   };
 
@@ -91,7 +164,7 @@ export function MenuManager() {
         toast.success('Item added');
       }
       setIsEditing(false);
-      setFormData({ name: '', price: 0, category: '', image: '', barcode: '', stock: 0 });
+      setFormData({ ...EMPTY_FORM });
       fetchBootstrap();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save item');
@@ -119,7 +192,7 @@ export function MenuManager() {
             <button 
               onClick={() => {
                 setIsEditing(false);
-                setFormData({ name: '', price: 0, category: '', image: '', barcode: '', stock: 0 });
+                setFormData({ ...EMPTY_FORM });
               }}
               className="sm:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
@@ -133,7 +206,7 @@ export function MenuManager() {
           <button 
             onClick={() => {
               setIsEditing(false);
-              setFormData({ name: '', price: 0, category: '', image: '', barcode: '', stock: 0 });
+              setFormData({ ...EMPTY_FORM });
             }}
             className="hidden sm:flex p-2 hover:bg-brand-100 rounded-lg text-brand-700 transition-colors"
           >
@@ -160,120 +233,127 @@ export function MenuManager() {
           </form>
 
           <form onSubmit={handleSubmit} className="space-y-6 p-4 sm:p-0 bg-white sm:bg-transparent">
+            {/* 1. Item Image (first) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Image</label>
+              <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="flex-1 flex gap-2">
+                    <label className="flex-1 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-center font-medium shadow-sm whitespace-nowrap">
+                      <Camera className="w-4 h-4 mr-2" />
+                      <span className="text-sm">Upload Photo</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                  </div>
+                  <div className="hidden sm:block w-px h-8 bg-gray-200"></div>
+                  <button type="button" onClick={() => setShowPexelsModal(true)} className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 text-purple-700 rounded-lg hover:from-purple-100 hover:to-indigo-100 transition-colors flex items-center justify-center font-medium whitespace-nowrap">
+                    <Sparkles className="w-4 h-4 mr-2 text-purple-500" />
+                    <span className="text-sm">Image Suggestion</span>
+                  </button>
+                </div>
+                {formData.image && (
+                  <div className="mt-4 flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg">
+                    <img src={formData.image} alt="Preview" className="w-16 h-16 object-cover rounded-md border border-gray-200" />
+                    <div className="flex-1"><p className="text-sm font-medium text-gray-900">Image selected</p></div>
+                    <button type="button" onClick={() => set({ image: '' })} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-5 h-5" /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* 2. Name then 3. Description */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Item Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name || ''}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
-                />
+                <input type="text" required value={formData.name || ''} onChange={e => set({ name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Price ({settings.currencySymbol || 'Rs.'}) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  min="0"
-                  value={formData.price || ''}
-                  onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
-                />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Category</label>
-                <select
-                  value={formData.category || ''}
-                  onChange={e => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none bg-white"
-                >
+                <select value={formData.category || ''} onChange={e => set({ category: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none bg-white">
                   <option value="">Select a category</option>
-                  {categories.map((c: any) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
+                  {categories.map((c: any) => (<option key={c.id} value={c.name}>{c.name}</option>))}
                 </select>
               </div>
-
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
+                <textarea value={formData.description || ''} onChange={e => set({ description: e.target.value })} rows={3} placeholder="Short description of the item..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Price ({settings.currencySymbol || 'Rs.'}) *</label>
+                <input type="number" step="0.01" required min="0" value={formData.price ?? ''} onChange={e => set({ price: parseFloat(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">MRP</label>
+                <input type="number" step="0.01" min="0" value={formData.mrp ?? ''} onChange={e => set({ mrp: e.target.value === '' ? null : parseFloat(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit</label>
+                <select value={formData.unit || 'NONE'} onChange={e => set({ unit: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white outline-none">
+                  {UNITS.map(u => (<option key={u} value={u}>{UNIT_LABELS[u]}</option>))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Dietary</label>
+                <div className="flex gap-2">
+                  {[{ v: 'VEG', icon: '🟩', label: 'Veg' }, { v: 'NONVEG', icon: '🟥', label: 'Non-veg' }, { v: 'EGG', icon: '🥚', label: 'Egg' }, { v: 'NONE', icon: '—', label: 'None' }].map(o => (
+                    <button key={o.v} type="button" onClick={() => set({ dietaryType: o.v })} title={o.label} className={cn('flex-1 px-2 py-2 border rounded-lg text-sm font-medium', formData.dietaryType === o.v ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-300 text-gray-600')}>{o.icon} {o.label}</button>
+                  ))}
+                </div>
+              </div>
               {settings.enableBarcode && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Barcode</label>
                   <div className="relative">
-                    <input
-                      type="text"
-                      value={formData.barcode || ''}
-                      onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                      className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowScanner(true)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-brand-600 rounded-md"
-                    >
-                      <ScanLine className="w-4 h-4" />
-                    </button>
+                    <input type="text" value={formData.barcode || ''} onChange={e => set({ barcode: e.target.value })} className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg outline-none" />
+                    <button type="button" onClick={() => setShowScanner(true)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-brand-600 rounded-md"><ScanLine className="w-4 h-4" /></button>
                   </div>
                 </div>
               )}
-
-              {settings.enableStock && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Stock Quantity</label>
-                  <input
-                    type="number"
-                    value={formData.stock || 0}
-                    onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
-                  />
-                </div>
-              )}
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center justify-between">
-                  <span>Item Image</span>
-                </label>
-                <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                    {/* Left: Input/Upload */}
-                    <div className="flex-1 flex gap-2">
-                      <label className="flex-1 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-center font-medium shadow-sm whitespace-nowrap">
-                        <Camera className="w-4 h-4 mr-2" />
-                        <span className="text-sm">Upload Photo</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                      </label>
-                    </div>
-                    
-                    {/* Right: Divider and AI Search */}
-                    <div className="hidden sm:block w-px h-8 bg-gray-200"></div>
-                    <button
-                      type="button"
-                      onClick={() => setShowPexelsModal(true)}
-                      className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 text-purple-700 rounded-lg hover:from-purple-100 hover:to-indigo-100 transition-colors flex items-center justify-center font-medium whitespace-nowrap"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2 text-purple-500" />
-                      <span className="text-sm">Image Suggestion</span>
-                    </button>
+            </div>
+            {/* TAX and HSN section */}
+            <div className="border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">TAX &amp; HSN</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HSN / SAC</label><input type="text" value={formData.hsnSac || ''} onChange={e => set({ hsnSac: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Rate %</label><select value={String(formData.taxRate ?? 0)} onChange={e => set({ taxRate: parseFloat(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white outline-none">{TAX_RATES.map(r => (<option key={r} value={r}>{r}%</option>))}</select></div>
+              </div>
+            </div>
+            {/* Other Pricing */}
+            <div className="border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">Other Pricing</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Price</label><input type="number" step="0.01" min="0" value={formData.purchasePrice ?? ''} onChange={e => set({ purchasePrice: e.target.value === '' ? null : parseFloat(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Wholesale Price</label><input type="number" step="0.01" min="0" value={formData.wholesalePrice ?? ''} onChange={e => set({ wholesalePrice: e.target.value === '' ? null : parseFloat(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Min Wholesale Qty</label><input type="number" min="0" step="1" value={formData.minWholesaleQty ?? ''} onChange={e => set({ minWholesaleQty: e.target.value === '' ? null : parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+              </div>
+            </div>
+            {/* Other Details */}
+            <div className="border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">Other Details</h3>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Portion Size</label>
+              <div className="flex flex-wrap gap-2">{PORTIONS.map(p => (<button key={p} type="button" onClick={() => set({ portionSize: p })} className={cn('px-3 py-1.5 border rounded-full text-sm', formData.portionSize === p ? 'border-brand-600 bg-brand-50 text-brand-700 font-medium' : 'border-gray-300 text-gray-600')}>{p}</button>))}</div>
+            </div>
+            {/* Stock / Inventory */}
+            <div className="border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">Stock / Inventory</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Opening Stock</label><input type="number" value={formData.stock || 0} onChange={e => set({ stock: parseInt(e.target.value) || 0 })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Stock-in Date</label><input type="date" value={formData.stockInDate || ''} onChange={e => set({ stockInDate: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Low Stock Alert At</label><input type="number" min="0" step="1" value={formData.lowStockAlert ?? ''} onChange={e => set({ lowStockAlert: e.target.value === '' ? null : parseInt(e.target.value) })} className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none" /></div>
+              </div>
+            </div>
+            {/* Variants */}
+            <div className="border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold text-gray-900">Variants</h3><button type="button" onClick={() => set({ variants: [...(formData.variants || []), { variantType: 'SIZE', variantName: '', extraPrice: 0 }] })} className="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg">+ Add Variant</button></div>
+              <div className="space-y-2">
+                {(formData.variants || []).map((v, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                    <select value={v.variantType} onChange={e => { const arr = [...(formData.variants || [])]; arr[i] = { ...arr[i], variantType: e.target.value as any }; set({ variants: arr }); }} className="col-span-3 px-2 py-2 border border-gray-300 rounded-lg bg-white text-sm outline-none">{VARIANT_TYPES.map(t => (<option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>))}</select>
+                    <input type="text" placeholder="Name (e.g. Large)" value={v.variantName} onChange={e => { const arr = [...(formData.variants || [])]; arr[i] = { ...arr[i], variantName: e.target.value }; set({ variants: arr }); }} className="col-span-5 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none" />
+                    <input type="number" step="0.01" placeholder="+ Price" value={v.extraPrice ?? ''} onChange={e => { const arr = [...(formData.variants || [])]; arr[i] = { ...arr[i], extraPrice: parseFloat(e.target.value) || 0 }; set({ variants: arr }); }} className="col-span-3 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none" />
+                    <button type="button" onClick={() => set({ variants: (formData.variants || []).filter((_, j) => j !== i) })} className="col-span-1 p-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
                   </div>
-                  {formData.image && (
-                    <div className="mt-4 flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg">
-                      <img src={formData.image} alt="Preview" className="w-16 h-16 object-cover rounded-md border border-gray-200" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">Image selected</p>
-                      </div>
-                      <button 
-                        type="button"
-                        onClick={() => setFormData({ ...formData, image: '' })}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
+                ))}
+                {(formData.variants || []).length === 0 && (<p className="text-xs text-gray-400">No variants. Add Size, Portion, Quantity, Serving, Custom or your own name.</p>)}
               </div>
             </div>
 
@@ -319,6 +399,34 @@ export function MenuManager() {
           />
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
+          {selectedIds.length > 0 && (
+            <>
+              <span className="text-xs font-bold text-gray-900 whitespace-nowrap px-1">
+                {selectedIds.length} selected
+              </span>
+              <button
+                onClick={() => setShowCategoryPopup(true)}
+                disabled={isBulkWorking}
+                className="flex items-center justify-center px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50"
+              >
+                Change Category
+              </button>
+              <button
+                onClick={() => setShowBulkDelete(true)}
+                disabled={isBulkWorking}
+                className="flex items-center justify-center px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+              </button>
+              <button
+                onClick={clearSelection}
+                className="px-2 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 transition-colors"
+              >
+                Clear
+              </button>
+              <div className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" />
+            </>
+          )}
           <button
             onClick={() => setShowAIModal(true)}
             className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-colors font-medium shadow-sm shadow-purple-500/30 relative overflow-hidden group"
@@ -329,7 +437,7 @@ export function MenuManager() {
           </button>
           <button
             onClick={() => {
-              setFormData({ name: '', price: 0, category: '', image: '', barcode: '', stock: 0 });
+              setFormData({ ...EMPTY_FORM });
               setIsEditing(true);
             }}
             className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium shadow-sm"
@@ -340,32 +448,77 @@ export function MenuManager() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4">
-        {filteredItems.map(item => {
+      {/* Bulk action bar — mobile only (desktop uses compact header buttons) */}
+      {selectedIds.length > 0 && (
+        <div className="sm:hidden bg-white rounded-xl border border-brand-200 shadow-sm p-3 flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-900 whitespace-nowrap mr-1">
+            {selectedIds.length} selected
+          </span>
+          <button
+            onClick={() => setShowCategoryPopup(true)}
+            disabled={isBulkWorking}
+            className="flex-1 flex items-center justify-center px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50"
+          >
+            Change Category
+          </button>
+          <button
+            onClick={() => setShowBulkDelete(true)}
+            disabled={isBulkWorking}
+            className="flex-1 flex items-center justify-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4 mr-1.5" /> Delete
+          </button>
+          <button
+            onClick={clearSelection}
+            className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {groupedSections.map((sec) => (
+        <div key={sec.category}>
+          <div className="flex items-center gap-2 mt-1 mb-2">
+            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{sec.category}</h3>
+            <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{sec.items.length}</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+          <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4">
+            {sec.items.map((item) => {
           const isOutOfStock = settings.enableStock && !settings.allowSaleWhenOutOfStock && (item.stock || 0) <= 0;
           
           return (
             <div 
               key={item.id}
+              onClick={() => toggleSelect(item.id)}
               className={cn(
-                "bg-white rounded-xl border border-gray-200 overflow-hidden group hover:shadow-md transition-all relative flex flex-col",
+                "bg-white rounded-xl border overflow-hidden group hover:shadow-md transition-all relative flex flex-col cursor-pointer",
+                selectedIds.includes(item.id)
+                  ? "border-brand-600 ring-2 ring-brand-500/30"
+                  : "border-gray-200",
                 isOutOfStock ? "opacity-60 grayscale-[0.5]" : ""
               )}
             >
               <div className="absolute top-2 left-2 z-10 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                 <button 
-                  onClick={() => handleEdit(item)}
-                  className="p-1.5 bg-white text-gray-600 hover:text-brand-600 rounded-md shadow-sm border border-gray-200"
+                  onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
+                  className="p-1.5 sm:p-2 bg-white text-gray-600 hover:text-brand-600 rounded-md shadow-sm border border-gray-200"
                 >
-                  <Edit2 className="w-3.5 h-3.5" />
+                  <Edit2 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                 </button>
               </div>
-              <div className="absolute top-2 right-2 z-10 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+                {selectedIds.includes(item.id) && (
+                  <span className="min-w-[20px] h-5 px-1.5 rounded-md bg-brand-600 text-white text-[11px] font-bold flex items-center justify-center shadow">
+                    {selectedIds.indexOf(item.id) + 1}
+                  </span>
+                )}
                 <button 
-                  onClick={() => setItemToDelete(item.id)}
-                  className="p-1.5 bg-white text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md shadow-sm border border-gray-200"
+                  onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); }}
+                  className="p-1.5 sm:p-2 bg-white text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md shadow-sm border border-gray-200 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                 </button>
               </div>
               
@@ -415,9 +568,11 @@ export function MenuManager() {
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
       
       {filteredItems.length === 0 && (
         <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-gray-100 border-dashed">
@@ -471,6 +626,80 @@ export function MenuManager() {
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors disabled:opacity-70 flex items-center justify-center"
               >
                 {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change-category popup */}
+      {showCategoryPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Change Category</h3>
+            <p className="text-sm text-gray-500 mb-4">{selectedIds.length} item(s) will be moved.</p>
+            <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-1 mb-5">
+              {categories.length === 0 && (
+                <p className="text-sm text-gray-400 py-2">No categories available.</p>
+              )}
+              {categories.map((c: any) => (
+                <button
+                  key={c.id}
+                  onClick={() => setBulkCategory(c.name)}
+                  className={cn(
+                    'w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                    bulkCategory === c.name
+                      ? 'bg-brand-50 text-brand-700 border border-brand-200'
+                      : 'text-gray-700 hover:bg-gray-50 border border-transparent'
+                  )}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowCategoryPopup(false); setBulkCategory(''); }}
+                disabled={isBulkWorking}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkCategory}
+                disabled={!bulkCategory || isBulkWorking}
+                className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+              >
+                {isBulkWorking ? <Loader2 className="w-5 h-5 animate-spin" /> : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete confirmation */}
+      {showBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Delete {selectedIds.length} item(s)?</h3>
+            <p className="text-sm text-gray-500 mb-6">They will be permanently removed.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowBulkDelete(false)}
+                disabled={isBulkWorking}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isBulkWorking}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors disabled:opacity-70 flex items-center justify-center"
+              >
+                {isBulkWorking ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Delete All'}
               </button>
             </div>
           </div>

@@ -51,6 +51,8 @@ export function DashboardView() {
     let cash = 0;
     let upi = 0;
     let card = 0;
+    let dineInSale = 0;
+    let takeawaySale = 0;
 
     filteredOrders.forEach(order => {
       totalSale += Number(order.total) || 0;
@@ -60,10 +62,29 @@ export function DashboardView() {
       if (mode === 'CASH') cash += Number(order.total) || 0;
       else if (mode === 'UPI') upi += Number(order.total) || 0;
       else if (mode === 'CARD') card += Number(order.total) || 0;
+
+      const ot = String(order.orderType || order.order_type || 'TAKEAWAY').toUpperCase();
+      if (ot === 'DINEIN' || ot === 'DINE IN' || ot === 'DINE_IN') dineInSale += Number(order.total) || 0;
+      else takeawaySale += Number(order.total) || 0;
     });
 
-    return { totalSale, totalCustomers, cash, upi, card };
+    return { totalSale, totalCustomers, cash, upi, card, dineInSale, takeawaySale };
   }, [filteredOrders]);
+
+  const isFoodBusiness = String(settings?.businessType || '').toUpperCase().includes('FOOD');
+  const dineInEnabled = settings?.dineInEnabled === true || settings?.dineInEnabled === 1;
+
+  const timeAgo = (ts: any) => {
+    const diff = Math.max(0, Date.now() - new Date(ts).getTime());
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return `${secs} sec${secs === 1 ? '' : 's'} ago`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  };
 
   const hourlyData = useMemo(() => {
     const hours = Array.from({ length: 14 }, (_, i) => i + 10); // 10AM to 11PM (23:00)
@@ -107,7 +128,7 @@ export function DashboardView() {
   const formatCurrency = (val: number) => `${settings.currencySymbol || 'Rs.'} ${val.toFixed(2)}`;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden pb-16 md:pb-0">
+    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="bg-white p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm z-10">
         <div className="flex items-center">
           <LayoutDashboard className="w-8 h-8 text-brand-600 mr-3 hidden sm:block" />
@@ -181,6 +202,22 @@ export function DashboardView() {
               <p className="text-sm sm:text-xl font-display font-bold text-blue-900">{formatCurrency(metrics.card)}</p>
             </div>
           </div>
+
+          {/* Dine-In / Take-Away split (food businesses only) */}
+          {isFoodBusiness && (
+            <div className="col-span-2 md:col-span-5 grid grid-cols-2 gap-2 sm:gap-4">
+              {dineInEnabled && (
+                <div className="bg-orange-50 p-3 sm:p-4 rounded-xl shadow-sm border border-orange-200 flex flex-col justify-between">
+                  <div className="text-orange-700 mb-1 sm:mb-2"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🍽️ Dine-In Sale</span></div>
+                  <p className="text-sm sm:text-xl font-display font-bold text-orange-900">{formatCurrency(metrics.dineInSale)}</p>
+                </div>
+              )}
+              <div className={cn('bg-teal-50 p-3 sm:p-4 rounded-xl shadow-sm border border-teal-200 flex flex-col justify-between', !dineInEnabled && 'col-span-2')}>
+                <div className="text-teal-700 mb-1 sm:mb-2"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🛍️ Take Away Sale</span></div>
+                <p className="text-sm sm:text-xl font-display font-bold text-teal-900">{formatCurrency(metrics.takeawaySale)}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Customer Flow Chart */}
@@ -235,22 +272,23 @@ export function DashboardView() {
               <thead>
                 <tr className="bg-white border-b border-gray-100">
                   <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">Order ID</th>
-                  <th className="hidden sm:table-cell px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">Time</th>
-                  <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</th>
+                  <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">When</th>
                   <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment</th>
                   <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Total</th>
-                  {isAdmin && <th className="px-3 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 6 : 5} className="px-3 sm:px-6 py-8 text-center text-gray-500">
+                    <td colSpan={4} className="px-3 sm:px-6 py-8 text-center text-gray-500">
                       No sales records for this period
                     </td>
                   </tr>
                 ) : (
-                  [...filteredOrders].reverse().slice(0, 8).map(order => (
+                  filteredOrders.slice(0, 8).map(order => {
+                    const ot = String(order.orderType || order.order_type || 'TAKEAWAY').toUpperCase();
+                    const isDineIn = ot === 'DINEIN' || ot === 'DINE_IN' || ot === 'DINE IN';
+                    return (
                     <tr 
                       key={order.id} 
                       onClick={() => setSelectedOrder(order)}
@@ -258,13 +296,17 @@ export function DashboardView() {
                     >
                       <td className="px-3 sm:px-6 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900" title={String(order.id)}>
                         ...{String(order.id).slice(-7)}
+                        {isFoodBusiness && (
+                          <div className={cn(
+                            'mt-0.5 inline-block sm:block w-fit px-1.5 py-px text-[9px] font-bold rounded-full uppercase',
+                            isDineIn ? 'bg-orange-100 text-orange-700' : 'bg-teal-100 text-teal-700'
+                          )}>
+                            {isDineIn ? '🍽️ Dine In' : '🛍️ Take Away'}
+                          </div>
+                        )}
                       </td>
-                      <td className="hidden sm:table-cell px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                        {new Date(order.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-3 sm:px-6 py-2 sm:py-3">
-                        <div className="text-xs sm:text-sm font-medium text-gray-900 truncate max-w-[80px] sm:max-w-none">{order.customerName || '-'}</div>
-                        <div className="text-[10px] sm:text-xs text-gray-500 truncate max-w-[80px] sm:max-w-none">{order.customerPhone || ''}</div>
+                      <td className="px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap text-xs sm:text-sm text-gray-500">
+                        {timeAgo(order.timestamp)}
                       </td>
                       <td className="px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap">
                         <span className={cn(
@@ -279,22 +321,9 @@ export function DashboardView() {
                       <td className="px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap text-xs sm:text-sm font-bold text-gray-900 text-right">
                         {formatCurrency(Number(order.total) || 0)}
                       </td>
-                      {isAdmin && (
-                        <td className="px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap text-right">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteSale(order.id);
-                            }}
-                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            title="Delete Sale"
-                          >
-                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </button>
-                        </td>
-                      )}
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -308,18 +337,34 @@ export function DashboardView() {
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
               <h2 className="font-bold text-lg text-gray-900">Order Details</h2>
-              <button 
+              <div className="flex items-center gap-1">
+                {isAdmin && (
+                  <button
+                    onClick={() => { setSelectedOrder(null); handleDeleteSale(selectedOrder.id); }}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete Sale"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
+                <button
                 onClick={() => setSelectedOrder(null)} 
                 className="p-2 -mr-2 text-gray-400 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
+              </div>
             </div>
             
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
               <div className="mb-4">
                 <p className="text-sm text-gray-500">Order ID</p>
                 <p className="font-medium text-gray-900">{selectedOrder.id}</p>
+                {isFoodBusiness && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Order Type: <span className="font-bold text-gray-900">{String(selectedOrder.orderType || selectedOrder.order_type || 'TAKEAWAY').toUpperCase().includes('DINE') ? 'DINE IN' : 'TAKE AWAY'}</span>
+                  </p>
+                )}
               </div>
               <div className="flex justify-between mb-4">
                 <div>

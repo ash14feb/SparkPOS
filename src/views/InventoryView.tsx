@@ -1,11 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Package, FolderTree, LayoutGrid } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { MenuManager } from './MenuManager';
 import { CategoriesManager } from './CategoriesManager';
+import { usePosStore } from '../store/usePosStore';
 
 export function InventoryView() {
   const [activeTab, setActiveTab] = useState<'inventory' | 'categories'>('inventory');
+  const { menuItems, fetchBootstrap } = usePosStore();
+
+  // Load items on direct visit/refresh (POS is not the only entry point)
+  useEffect(() => {
+    if (menuItems.length === 0) fetchBootstrap();
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-gray-50 overflow-hidden">

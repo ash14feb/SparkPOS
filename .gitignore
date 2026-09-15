@@ -10,3 +10,5 @@ coverage/
 /.vs/SparkPOS/FileContentIndex
 /.vs/SparkPOS/CopilotIndices/17.14.1431.25910
 /.vs/SparkPOS/config
+/.vs
+/.vite/deps

@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 
+export interface MenuVariant {
+  id?: string | number;
+  variantType: 'SIZE' | 'PORTION' | 'QUANTITY' | 'SERVING' | 'CUSTOM';
+  variantName: string;
+  extraPrice?: number;
+  sortOrder?: number;
+}
+
 export interface MenuItem {
   id: number;
   name: string;
@@ -10,6 +18,19 @@ export interface MenuItem {
   category: string;
   barcode?: string;
   stock?: number;
+  mrp?: number | null;
+  unit?: string;
+  description?: string;
+  dietaryType?: string;
+  hsnSac?: string;
+  taxRate?: number;
+  purchasePrice?: number | null;
+  wholesalePrice?: number | null;
+  minWholesaleQty?: number | null;
+  portionSize?: string;
+  stockInDate?: string;
+  lowStockAlert?: number | null;
+  variants?: MenuVariant[];
 }
 
 export interface CartItem extends MenuItem {

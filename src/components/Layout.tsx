@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -23,6 +23,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
 import { usePrinterStore } from '../store/usePrinterStore';
 import { connectBtPrinter } from '../lib/bluetoothPrinter';
+import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 
@@ -30,7 +31,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: ShoppingCart, label: 'POS', path: '/pos' },
   { icon: ListOrdered, label: 'Orders', path: '/orders' },
-  { icon: UtensilsCrossed, label: 'Tables', path: '/tables' },
+  { icon: UtensilsCrossed, label: 'Table Settings', path: '/tables?tab=settings' },
   { icon: ChefHat, label: 'Kitchen (KDS)', path: '/kds' },
   { icon: Package, label: 'Menu & Stock', path: '/menu' },
   { icon: Users, label: 'Customers', path: '/customers' },
@@ -48,6 +49,51 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [occupiedCount, setOccupiedCount] = useState(0);
+  const [attentionCount, setAttentionCount] = useState(0);
+
+  // Dine-in is opt-in: FOOD + "Dine-In Available? YES" (default NO => takeaway only,
+  // no Tables entry points anywhere).
+  const dineInEnabled =
+    String(settings?.businessType || '').toUpperCase().includes('FOOD') &&
+    (settings?.dineInEnabled === true || settings?.dineInEnabled === 1);
+
+  const fetchOccupied = useCallback(async () => {
+    if (!dineInEnabled) { setOccupiedCount(0); setAttentionCount(0); return; }
+    try {
+      const res = await api.getTables();
+      const list = res?.data || [];
+      setOccupiedCount(list.filter((t: any) => ['OCCUPIED', 'HAVING_FOOD', 'CUSTOMER_ORDERED'].includes(t.status)).length);
+      // CUSTOMER_ORDERED = needs staff attention (new / updated customer order).
+      setAttentionCount(list.filter((t: any) => t.status === 'CUSTOMER_ORDERED').length);
+    } catch {
+      // silent
+    }
+  }, [dineInEnabled]);
+
+  useEffect(() => {
+    fetchOccupied();
+    if (!dineInEnabled) return;
+    // Fast poll + refetch on focus/visibility so a customer re-order
+    // (CUSTOMER_ORDERED) bumps the footer badge without manual refresh.
+    const id = setInterval(fetchOccupied, 10000);
+    const onFocus = () => fetchOccupied();
+    const onVis = () => { if (document.visibilityState === 'visible') fetchOccupied(); };
+    const onTablesChanged = () => fetchOccupied();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('sparkpos:tables-changed', onTablesChanged);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('sparkpos:tables-changed', onTablesChanged);
+    };
+  }, [fetchOccupied, dineInEnabled]);
+
+  useEffect(() => {
+    fetchOccupied();
+  }, [location.pathname, fetchOccupied]);
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -59,7 +105,7 @@ export function Layout() {
     navigate('/login');
   };
 
-  const visibleNav = navItems;
+  const visibleNav = dineInEnabled ? navItems : navItems.filter((i) => i.path !== '/tables');
 
   return (
     <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
@@ -185,37 +231,41 @@ export function Layout() {
       </aside>
       
       <main className={cn(
-        "flex-1 flex flex-col relative overflow-hidden min-h-0 pt-16 md:pt-0 md:pb-0",
-        location.pathname !== '/pos' ? "pb-16" : "pb-0"
+        "flex-1 flex flex-col relative overflow-hidden min-h-0 pt-16 md:pt-0 pb-16"
       )}>
         <Outlet />
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      {location.pathname !== '/pos' && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] h-16">
+      {/* Bottom Navigation (mobile + desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] h-16">
           <NavLink to="/dashboard" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <LayoutDashboard className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Home</span>
           </NavLink>
-          <NavLink to="/tables" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
+          {dineInEnabled && (
+          <NavLink to="/tables" className={({isActive}) => cn("relative flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <UtensilsCrossed className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-medium">Table</span>
+            <span className="text-[10px] font-medium">{attentionCount > 0 ? `🟡 ${attentionCount} Ordered` : occupiedCount > 0 ? `🔴 ${occupiedCount} Tables` : 'Tables'}</span>
+            {(attentionCount > 0 || occupiedCount > 0) && (
+              <span className="absolute top-1.5 right-1/2 translate-x-6 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 animate-pulse text-white text-[10px] font-bold flex items-center justify-center">
+                {attentionCount > 0 ? attentionCount : occupiedCount}
+              </span>
+            )}
           </NavLink>
+          )}
           <NavLink to="/pos" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <ShoppingCart className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">POS</span>
           </NavLink>
           <NavLink to="/orders" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <ListOrdered className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-medium">Orders</span>
+            <span className="text-[10px] font-medium">Transactions</span>
           </NavLink>
           <NavLink to="/profile" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <UserRound className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-medium">Profile</span>
+            <span className="text-[10px] font-medium">More</span>
           </NavLink>
         </div>
-      )}
     </div>
   );
 }
