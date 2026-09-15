@@ -18,6 +18,7 @@ export function MenuManager() {
   const [showPexelsModal, setShowPexelsModal] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<MenuItem>>({
     name: '',
@@ -61,12 +62,14 @@ export function MenuManager() {
   const handleDelete = async () => {
     if (!itemToDelete) return;
     try {
+      setIsDeleting(true);
       await api.deleteMenuItem(itemToDelete);
       toast.success('Item deleted');
       fetchBootstrap();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete item');
     } finally {
+      setIsDeleting(false);
       setItemToDelete(null);
     }
   };
@@ -439,6 +442,39 @@ export function MenuManager() {
           onClose={() => setShowScanner(false)}
           onScan={(code) => setFormData({ ...formData, barcode: code })}
         />
+      )}
+
+      {/* Delete confirmation */}
+      {itemToDelete !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Delete item?</h3>
+            <p className="text-sm text-gray-500 mb-6">
+              {menuItems.find((i) => i.id === itemToDelete)?.name
+                ? `"${menuItems.find((i) => i.id === itemToDelete)?.name}" will be permanently removed.`
+                : 'This item will be permanently removed.'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setItemToDelete(null)}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors disabled:opacity-70 flex items-center justify-center"
+              >
+                {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

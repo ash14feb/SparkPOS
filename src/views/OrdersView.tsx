@@ -37,9 +37,12 @@ export function OrdersView() {
     }
   };
 
-  const filteredOrders = orders.filter(o => 
-    o.order_code?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredOrders = orders
+    .filter(o =>
+      o.order_code?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    // Latest record on top
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const renderItems = (itemsJson: string) => {
     try {

@@ -27,6 +27,8 @@ import { SettingsView } from './views/SettingsView';
 import { PublicMenuView } from './views/PublicMenuView';
 import { InventoryView } from './views/InventoryView';
 import { BillView } from './views/BillView';
+import { StaffView } from './views/StaffView';
+import { ProfileView } from './views/ProfileView';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -75,6 +77,8 @@ export default function App() {
           <Route path="/expenses" element={<ExpensesView />} />
           <Route path="/reports" element={<GenericView title="Reports & Analytics" icon={BarChart3} />} />
           <Route path="/settings" element={<SettingsView />} />
+          <Route path="/staff" element={<StaffView />} />
+          <Route path="/profile" element={<ProfileView />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

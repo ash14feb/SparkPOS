@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 
 export function AuthView() {
@@ -22,8 +23,12 @@ export function AuthView() {
         toast.success('Welcome back to SPARKPOS!');
         navigate('/pos');
       } else {
-        // Mock register for now
-        toast.success('Registration successful. Please log in.');
+        await api.register({
+          name: String(data.name || ''),
+          email: String(data.email || ''),
+          business_name: String(data.business_name || ''),
+        });
+        toast.success('Registration complete. Admin credentials have been emailed to you.');
         setIsLogin(true);
       }
     } catch (error: any) {

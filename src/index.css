@@ -1,18 +1,68 @@
 @import "tailwindcss";
 
-@theme {
+@theme inline {
   --font-sans: "Plus Jakarta Sans", sans-serif;
   --font-display: "Outfit", sans-serif;
-  
-  --color-brand-50: #f0fdfa;
-  --color-brand-100: #ccfbf1;
-  --color-brand-500: #14b8a6;
-  --color-brand-600: #0d9488;
-  --color-brand-900: #134e4a;
-  
+
+  /* Runtime theme vars — switched via [data-theme] below */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-900: var(--brand-900);
+
   --color-dark-900: #0f172a;
   --color-dark-800: #1e293b;
   --color-dark-700: #334155;
+}
+
+/* 4 selectable themes (default = teal) */
+:root, :root[data-theme="teal"] {
+  --brand-50: #f0fdfa;
+  --brand-100: #ccfbf1;
+  --brand-500: #14b8a6;
+  --brand-600: #0d9488;
+  --brand-700: #0f766e;
+  --brand-900: #134e4a;
+  --brand-gradient: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+:root[data-theme="ocean"] {
+  --brand-50: #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-500: #3b82f6;
+  --brand-600: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-900: #1e3a8a;
+  --brand-gradient: linear-gradient(90deg, #1d4ed8, #60a5fa);
+}
+:root[data-theme="sunset"] {
+  --brand-50: #fff7ed;
+  --brand-100: #ffedd5;
+  --brand-500: #f97316;
+  --brand-600: #ea580c;
+  --brand-700: #c2410c;
+  --brand-900: #7c2d12;
+  --brand-gradient: linear-gradient(90deg, #c2410c, #fb923c);
+}
+:root[data-theme="plum"] {
+  --brand-50: #faf5ff;
+  --brand-100: #f3e8ff;
+  --brand-500: #a855f7;
+  --brand-600: #9333ea;
+  --brand-700: #7e22ce;
+  --brand-900: #581c87;
+  --brand-gradient: linear-gradient(90deg, #7e22ce, #d8b4fe);
+}
+
+/* Ocean theme: primary surfaces use the dark-blue → light-blue gradient */
+:root[data-theme="ocean"] .bg-brand-600,
+:root[data-theme="ocean"] .hover\:bg-brand-600:hover {
+  background-image: var(--brand-gradient);
+}
+:root[data-theme="ocean"] .bg-brand-500,
+:root[data-theme="ocean"] .hover\:bg-brand-700:hover {
+  background-image: var(--brand-gradient);
 }
 
 @layer base {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { Receipt, Search, Plus, Calendar } from 'lucide-react';
+import { Wallet, Plus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Expense {
@@ -12,10 +12,17 @@ interface Expense {
   created_by: number;
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 export function ExpensesView() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [date, setDate] = useState(today());
+  const [category, setCategory] = useState('General');
+  const [amount, setAmount] = useState<number | string>('');
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     fetchExpenses();
@@ -33,87 +40,97 @@ export function ExpensesView() {
     }
   };
 
-  const filteredExpenses = expenses.filter(e => 
-    e.category?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    e.notes?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const total = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const handleAdd = async () => {
+    if (!amount || !date) return;
+    setIsSaving(true);
+    try {
+      await api.addExpense({
+        expense_date: date,
+        category: category.trim() || 'General',
+        amount: Number(amount),
+        notes: notes.trim(),
+      });
+      toast.success('Expense added successfully');
+      setAmount('');
+      setNotes('');
+      setCategory('General');
+      fetchExpenses();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to add expense');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden">
-      <div className="bg-white p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center">
-          <Receipt className="w-8 h-8 text-brand-600 mr-3" />
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-gray-50 overflow-hidden">
+      <div className="bg-white p-4 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm z-10 shrink-0">
+        <h1 className="text-xl sm:text-2xl font-display font-bold text-gray-900 leading-tight">Expense Record</h1>
+        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-50 text-brand-700 text-sm font-bold w-fit">
+          Total: Rs. {total.toFixed(2)}
+        </span>
+      </div>
+
+      {/* Add Expense form */}
+      <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-4 shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 max-w-5xl">
           <div>
-            <h1 className="text-2xl font-display font-bold text-gray-900 leading-tight">Expenses</h1>
-            <p className="text-sm text-gray-500">Track daily restaurant expenses</p>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Date *</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
           </div>
-        </div>
-        <div className="flex items-center space-x-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="Search expenses..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all w-64"
-            />
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
+            <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Rent, Vegetables"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
           </div>
-          <button className="flex items-center px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors shadow-sm">
-            <Plus className="w-4 h-4 mr-2" /> Add Expense
-          </button>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Amount *</label>
+            <input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value ? Number(e.target.value) : '')} placeholder="0.00"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none" />
+          </div>
+          <div className="flex items-end col-span-2 sm:col-span-1">
+            <button onClick={handleAdd} disabled={!amount || !date || isSaving}
+              className="w-full flex items-center justify-center px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50">
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="w-4 h-4 mr-1" /> Add Expense</>}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6 custom-scrollbar">
+      {/* List (append-only, latest first from API) */}
+      <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 custom-scrollbar no-chain-scroll">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
           </div>
+        ) : expenses.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center text-gray-500">
+            <p className="text-base font-medium text-gray-900">No expenses recorded.</p>
+          </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredExpenses.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                      <Receipt className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                      <p className="text-base font-medium text-gray-900">No expenses found</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredExpenses.map((expense) => (
-                    <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center text-sm text-gray-900">
-                          <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                          {new Date(expense.expense_date).toLocaleDateString()}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {expense.category}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900 line-clamp-1">{expense.notes}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
-                        Rs. {Number(expense.amount || 0).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 max-w-5xl">
+            {expenses.map((e) => (
+              <div key={e.id} className="flex items-center px-4 sm:px-6 py-3.5">
+                <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mr-4 shrink-0">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-gray-900 text-sm">{e.category || 'General'}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {String(e.expense_date).slice(0, 10)}{e.notes ? ` - ${e.notes}` : ''}
+                  </p>
+                </div>
+                <p className="font-bold text-gray-900 text-sm ml-3 whitespace-nowrap">Rs. {Number(e.amount || 0).toFixed(2)}</p>
+              </div>
+            ))}
           </div>
         )}
       </div>

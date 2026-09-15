@@ -203,6 +203,14 @@ export function POSView() {
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-gray-50 relative overscroll-none">
+      {/* Full-screen blocking loader while order is processing */}
+      {isSubmitting && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm">
+          <div className="w-14 h-14 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+          <p className="mt-4 text-white font-bold">Processing order...</p>
+          <p className="mt-1 text-white/70 text-sm">Please wait, do not press anything</p>
+        </div>
+      )}
       {/* Printer Modal */}
       {showPrinterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
@@ -751,7 +759,7 @@ export function POSView() {
                     : "bg-white border border-brand-200 text-brand-700 hover:bg-brand-50"
                 )}
               >
-                Pay Only
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Pay Only'}
               </button>
               <button 
                 onClick={() => processOrder(false)}

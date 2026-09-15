@@ -49,6 +49,18 @@ export const api = {
   register: (data: any) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/api/auth/me'),
   getUsers: () => request('/api/auth/users'),
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    request('/api/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
+  forgotPassword: (data: { email: string }) =>
+    request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(data) }),
+  resetPassword: (data: { token: string; newPassword: string }) =>
+    request('/api/auth/reset-password', { method: 'POST', body: JSON.stringify(data) }),
+
+  // User management (admin)
+  createUser: (data: any) => request('/api/auth/create-user', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: string | number, data: any) => request(`/api/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteUser: (id: string | number) => request(`/api/auth/users/${id}`, { method: 'DELETE' }),
+  resendCredentials: (id: string | number) => request(`/api/auth/users/${id}/resend-credentials`, { method: 'POST' }),
   
   // POS
   bootstrap: () => request('/api/pos/bootstrap'),
@@ -93,4 +105,6 @@ export const api = {
   
   // Expenses
   getExpenses: () => request('/api/posexpenses'),
+  addExpense: (data: { expense_date: string; category?: string; amount: number; notes?: string }) =>
+    request('/api/posexpenses', { method: 'POST', body: JSON.stringify(data) }),
 };

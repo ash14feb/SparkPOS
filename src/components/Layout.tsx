@@ -15,7 +15,9 @@ import {
   Menu,
   X,
   Bluetooth,
-  Printer
+  Printer,
+  UserRound,
+  ContactRound
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
@@ -34,7 +36,9 @@ const navItems = [
   { icon: Users, label: 'Customers', path: '/customers' },
   { icon: CreditCard, label: 'Expenses', path: '/expenses' },
   { icon: BarChart3, label: 'Reports', path: '/reports' },
+  { icon: ContactRound, label: 'Staff', path: '/staff' },
   { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: UserRound, label: 'Profile', path: '/profile' },
 ];
 
 export function Layout() {
@@ -54,6 +58,8 @@ export function Layout() {
     logout();
     navigate('/login');
   };
+
+  const visibleNav = navItems;
 
   return (
     <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
@@ -140,7 +146,7 @@ export function Layout() {
         </div>
         
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
-          {navItems.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -204,10 +210,10 @@ export function Layout() {
             <ListOrdered className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Orders</span>
           </NavLink>
-          <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center justify-center w-1/5 h-full text-gray-500 hover:text-gray-900">
-            <Menu className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-medium">More</span>
-          </button>
+          <NavLink to="/profile" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
+            <UserRound className="w-5 h-5 mb-1" />
+            <span className="text-[10px] font-medium">Profile</span>
+          </NavLink>
         </div>
       )}
     </div>

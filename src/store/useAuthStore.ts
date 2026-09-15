@@ -3,6 +3,7 @@ import { api, removeAuthToken, setAuthToken } from '../lib/api';
 
 interface User {
   id: number;
+  user_id?: number;
   username: string;
   email: string;
   full_name: string;
@@ -16,9 +17,28 @@ interface AuthState {
   login: (credentials: any) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateProfile: (data: { full_name?: string; username?: string }) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+// Backend key names vary (user_id vs id, user_type vs userType/role) —
+// normalize once so every role check sees a consistent shape.
+function normalizeUser(raw: any): User | null {
+  if (!raw) return null;
+  const u = raw.user || raw.data?.user || raw;
+  if (!u || typeof u !== 'object') return null;
+  const id = u.id ?? u.user_id ?? 0;
+  return {
+    id,
+    user_id: u.user_id ?? u.id ?? id,
+    username: u.username ?? '',
+    email: u.email ?? '',
+    full_name: u.full_name ?? u.fullName ?? u.name ?? '',
+    user_type: String(u.user_type ?? u.userType ?? u.role ?? u.type ?? '').toLowerCase(),
+  };
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
@@ -31,7 +51,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (data.token) {
         setAuthToken(data.token);
       }
-      set({ user: data.user, isAuthenticated: true });
+      set({ user: normalizeUser(data), isAuthenticated: true });
     } catch (error) {
       throw error;
     }
@@ -45,10 +65,24 @@ export const useAuthStore = create<AuthState>((set) => ({
   checkAuth: async () => {
     try {
       const response = await api.me();
-      const user = response.data || response;
-      set({ user, isAuthenticated: true, isLoading: false });
+      const user = normalizeUser(response.data || response);
+      set({ user, isAuthenticated: !!user, isLoading: false });
     } catch (error) {
       set({ user: null, isAuthenticated: false, isLoading: false });
     }
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    await api.changePassword({ currentPassword, newPassword });
+  },
+
+  updateProfile: async (data) => {
+    const user = get().user;
+    if (!user) throw new Error('Not logged in');
+    const id = user.user_id ?? user.id;
+    const response = await api.updateUser(id, data);
+    const updated = response.data?.user || response.user || response.data || null;
+    if (updated) set({ user: { ...user, ...updated } });
+    else set({ user: { ...user, ...data } });
   },
 }));
