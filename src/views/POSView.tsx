@@ -8,6 +8,7 @@ import { toBlob } from 'html-to-image';
 import { buildBillLink, buildShortBillLink, normalizePhone } from '../lib/billLink';
 import { connectBtPrinter, printReceiptBle, getBtPrinter, disconnectBtPrinter } from '../lib/bluetoothPrinter';
 import { usePrinterStore } from '../store/usePrinterStore';
+import { formatDateTime } from '../lib/datetime';
 import { BarcodeScannerModal } from '../components/BarcodeScanner';
 import { usePosGridStore, effectiveMobileCols, effectiveDesktopCols } from '../store/usePosGridStore';
 
@@ -294,7 +295,7 @@ export function POSView() {
             header: settings?.receiptHeader,
             footer: settings?.receiptFooter,
             orderId: orderPayload.id,
-            date: new Date(orderPayload.timestamp).toLocaleString(),
+            date: formatDateTime(orderPayload.timestamp, settings),
             items: cart.map(c => ({ name: c.name, qty: c.quantity, price: Number(c.price) || 0 })),
             subtotal, discount: discountVal, total,
             currency: settings?.currencySymbol || 'Rs.',
@@ -618,7 +619,7 @@ export function POSView() {
                 <h3 className="font-bold text-lg">{settings?.restaurantName || 'Intelli POS'}</h3>
                 <p className="text-xs text-gray-500">Order: {completedOrder.id}</p>
                 {completedOrder.orderType && <p className="text-xs text-gray-500">Order Type: {completedOrder.orderType === 'DINEIN' ? 'DINE IN' : 'TAKE AWAY'}{completedOrder.tableNo ? ` • Table ${completedOrder.tableNo}` : ''}</p>}
-                <p className="text-xs text-gray-500">{new Date(completedOrder.timestamp).toLocaleString()}</p>
+                <p className="text-xs text-gray-500">{formatDateTime(completedOrder.timestamp, settings)}</p>
               </div>
               <div className="space-y-2 mb-4">
                 {completedOrder.items.map((item: any) => (

@@ -4,8 +4,7 @@ import { FileText, Search, ChevronLeft, ChevronRight, CalendarDays, X } from 'lu
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { usePosStore } from '../store/usePosStore';
-import { startOfDay, endOfDay, addDays, format } from 'date-fns';
-import { parseDbTime, dbTimeMs } from '../lib/datetime';
+import { dbTimeMs, formatDate, formatTime, formatDateTime, dayBoundsInTimezone, dateKeyInTimezone } from '../lib/datetime';
 
 interface HistoryOrder {
   id: number;
@@ -59,13 +58,14 @@ export function OrdersView() {
   const useCustom = customStart !== '' || customEnd !== '';
   const range = useMemo(() => {
     if (useCustom) {
-      const s = customStart ? startOfDay(new Date(customStart)) : startOfDay(new Date(0));
-      const e = customEnd ? endOfDay(new Date(customEnd)) : endOfDay(new Date());
-      return { start: s, end: e, label: `${customStart || '…'} → ${customEnd || '…'}` };
+      const s = customStart ? dayBoundsInTimezone(customStart, settings).start : 0;
+      const e = customEnd ? dayBoundsInTimezone(customEnd, settings).end : Date.now();
+      return { start: new Date(s), end: new Date(e), label: `${customStart || '…'} → ${customEnd || '…'}` };
     }
-    const day = addDays(new Date(), dayOffset);
-    return { start: startOfDay(day), end: endOfDay(day), label: format(day, 'EEE, d MMM yyyy') };
-  }, [dayOffset, customStart, customEnd, useCustom]);
+    const key = dateKeyInTimezone(Date.now() + dayOffset * 86400000, settings);
+    const b = dayBoundsInTimezone(key, settings);
+    return { start: new Date(b.start), end: new Date(b.end), label: formatDate(b.start, settings) };
+  }, [dayOffset, customStart, customEnd, useCustom, settings]);
 
   const filteredOrders = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -206,8 +206,8 @@ export function OrdersView() {
                       </td>
                       {/* Client timezone rendering */}
                       <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{parseDbTime(order.created_at || order.timestamp || 0).toLocaleDateString()}</div>
-                        <div className="text-xs text-gray-500">{parseDbTime(order.created_at || order.timestamp || 0).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div className="text-sm text-gray-900">{formatDate(order.created_at || order.timestamp || 0, settings)}</div>
+                        <div className="text-xs text-gray-500">{formatTime(order.created_at || order.timestamp || 0, settings)}</div>
                       </td>
                       <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                         <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase bg-gray-100 text-gray-700">
@@ -235,7 +235,7 @@ export function OrdersView() {
               <div>
                 <h2 className="font-bold text-lg text-gray-900">{selectedOrder.order_code}</h2>
                 <p className="text-xs text-gray-500">
-                  {parseDbTime(selectedOrder.created_at || selectedOrder.timestamp || 0).toLocaleString()}
+                  {formatDateTime(selectedOrder.created_at || selectedOrder.timestamp || 0, settings)}
                   {isFoodBusiness ? ` · ${isDineIn(selectedOrder) ? 'DINE IN' : 'TAKE AWAY'}` : ''}
                   {selectedOrder.table_no || selectedOrder.table_id ? ` · Table ${selectedOrder.table_no || selectedOrder.table_id}` : ''}
                 </p>

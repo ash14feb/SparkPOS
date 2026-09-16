@@ -1,9 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Loader2, AlertCircle, ShoppingBag, Info, Plus, Minus, Trash2, X, CheckCircle2, UtensilsCrossed } from 'lucide-react';
+import { Loader2, AlertCircle, ShoppingBag, Info, Plus, Minus, Trash2, X, CheckCircle2, UtensilsCrossed, Star, MessageSquareText, ChefHat } from 'lucide-react';
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
+
+function Stars({ value, onRate, size = 'w-7 h-7' }: { value: number; onRate?: (v: number) => void; size?: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((s) => (
+        <button
+          key={s}
+          type="button"
+          disabled={!onRate}
+          onClick={() => onRate?.(s)}
+          className={cn(!onRate && 'cursor-default')}
+          aria-label={`${s} star`}
+        >
+          <Star className={cn(size, s <= value ? 'text-amber-400 fill-amber-400' : 'text-gray-300', onRate && 'hover:scale-110 transition-transform')} />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface CartLine {
   id: string;
@@ -25,14 +44,34 @@ export function PublicMenuView() {
   const [showCart, setShowCart] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [kitchenNotes, setKitchenNotes] = useState('');
   const [isPlacing, setIsPlacing] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
+  // Ratings (HAVING_FOOD only)
+  const [overallRating, setOverallRating] = useState(0);
+  const [itemRatings, setItemRatings] = useState<Record<string, number>>({});
+  const [reviewText, setReviewText] = useState('');
+  const [isReviewing, setIsReviewing] = useState(false);
+  const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (code) {
       fetchMenu();
     }
   }, [code]);
+
+  // Live status: when staff serves (HAVING_FOOD) or updates the order, the
+  // public menu refreshes silently — no manual refresh needed.
+  useEffect(() => {
+    if (!code) return;
+    pollRef.current = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !showCart) fetchMenu(true);
+    }, 12000);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, showCart]);
 
   const fetchMenu = async (silent = false) => {
     try {
@@ -44,8 +83,30 @@ export function PublicMenuView() {
         if (res.data?.activeOrder?.orderCode) {
           setPlacedOrder((prev: any) => prev || { orderCode: res.data.activeOrder.orderCode, tableNo: res.data.table?.table_no, total: res.data.activeOrder.total });
         }
-        // Prefill name/phone from the live order so re-orders don't retype.
-        if (res.data?.activeOrder?.customerName && !customerName) setCustomerName(res.data.activeOrder.customerName);
+        // Prefill name/phone from the live order so re-orders don't retype
+        // (functional set => never clobbers what the user already typed).
+        if (res.data?.activeOrder?.customerName) {
+          const nm = res.data.activeOrder.customerName;
+          setCustomerName((prev) => prev || nm);
+        }
+        if (res.data?.activeOrder?.customerPhone) {
+          const ph = res.data.activeOrder.customerPhone;
+          setCustomerPhone((prev) => prev || ph);
+        }
+        // Prefill existing review (if already rated on this device/order).
+        const mr = res.data?.activeOrder?.myReview;
+        if (mr) {
+          if (mr.overallRating) setOverallRating((prev) => prev || mr.overallRating);
+          if (mr.reviewText) setReviewText((prev) => prev || mr.reviewText);
+          if (Array.isArray(mr.items) && mr.items.length) {
+            setItemRatings((prev) => {
+              if (Object.keys(prev).length) return prev;
+              const m: Record<string, number> = {};
+              mr.items.forEach((it: any) => { if (it.name) m[it.name] = it.rating; });
+              return m;
+            });
+          }
+        }
       } else {
         setError(res.message || 'Menu not found');
       }
@@ -85,9 +146,11 @@ export function PublicMenuView() {
         items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, image: c.image, category: c.category, qty: c.qty })),
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
+        kitchenNotes: kitchenNotes.trim(),
       });
       setPlacedOrder(res.data);
       setCart([]);
+      setKitchenNotes('');
       setShowCart(false);
       toast.success(res.appended ? 'Extra items added to your order!' : 'Order placed!');
       // Refresh so the summary card + totals reflect the live order, then flip
@@ -102,6 +165,25 @@ export function PublicMenuView() {
       toast.error(err.message || 'Could not place order');
     } finally {
       setIsPlacing(false);
+    }
+  };
+
+  const handleReview = async () => {
+    if (!overallRating) return toast.error('Please tap the stars for an overall rating');
+    if (reviewText.length > 250) return toast.error('Review must be within 250 characters');
+    try {
+      setIsReviewing(true);
+      await api.submitTableReview(code!, {
+        overallRating,
+        reviewText: reviewText.trim(),
+        itemRatings: Object.entries(itemRatings).map(([name, rating]) => ({ name, rating })),
+      });
+      toast.success('Thank you for your feedback! ⭐');
+      await fetchMenu(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Could not save review');
+    } finally {
+      setIsReviewing(false);
     }
   };
 
@@ -210,7 +292,7 @@ export function PublicMenuView() {
           </div>
         </div>
       )}
-      {customerOrdered && (
+      {customerOrdered && !isHavingFood && (
         <div className="max-w-3xl mx-auto px-4 pt-4">
           <div className="pop-in relative overflow-hidden rounded-2xl p-5 text-center text-white shadow-xl bg-gradient-to-r from-violet-600 via-fuchsia-500 to-amber-500">
             <div className="text-4xl mb-1">🎉</div>
@@ -224,7 +306,7 @@ export function PublicMenuView() {
         </div>
       )}
       {hasLiveOrder && (
-        <div className="max-w-3xl mx-auto px-4 pt-4">
+        <div className="max-w-3xl mx-auto px-4 pt-4 pb-5 mb-1">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-900 text-sm">🧾 Your Ordered Items{tableStatus === 'HAVING_FOOD' ? ' · Being Served' : ''}</h3>
@@ -248,6 +330,54 @@ export function PublicMenuView() {
               <span>{currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1">Please pay at the counter. Thank you!</p>
+          </div>
+        </div>
+      )}
+      {isHavingFood && hasLiveOrder && (
+        <div className="max-w-3xl mx-auto px-4 pt-1 pb-5 mb-1">
+          <div className="bg-white rounded-2xl shadow-sm border border-amber-100 p-4">
+            <h3 className="font-bold text-gray-900 text-sm flex items-center">
+              <Star className="w-4 h-4 mr-1.5 text-amber-400 fill-amber-400" />
+              {activeOrder?.myReview ? 'Your Rating (tap to update)' : 'How was your food? Rate us!'}
+            </h3>
+            <div className="mt-3">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Overall Experience *</p>
+              <Stars value={overallRating} onRate={setOverallRating} />
+            </div>
+            <div className="mt-4 space-y-2.5">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Rate each dish</p>
+              {activeOrder?.items?.map((it: any, i: number) => (
+                <div key={`${it.name}-${i}`} className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-gray-700 truncate flex-1">{it.qty}x {it.name}</span>
+                  <Stars
+                    value={itemRatings[it.name] || 0}
+                    size="w-5 h-5"
+                    onRate={(v) => setItemRatings((prev) => ({ ...prev, [it.name]: v }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <label className="flex items-center text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                <MessageSquareText className="w-3.5 h-3.5 mr-1.5" /> Write a review
+              </label>
+              <textarea
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value.slice(0, 250))}
+                placeholder="Loved the taste? Tell us in a few words…"
+                rows={3}
+                maxLength={250}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 resize-none text-sm"
+              />
+              <p className="text-[11px] text-gray-400 mt-1 text-right">{reviewText.length}/250</p>
+            </div>
+            <button
+              onClick={handleReview}
+              disabled={isReviewing || !overallRating}
+              className="mt-2 w-full py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center"
+            >
+              {isReviewing ? <Loader2 className="w-5 h-5 animate-spin" /> : activeOrder?.myReview ? 'Update My Review' : 'Submit My Review'}
+            </button>
           </div>
         </div>
       )}
@@ -436,6 +566,19 @@ export function PublicMenuView() {
                   placeholder="e.g. 98765 43210"
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
                 />
+              </div>
+              <div>
+                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                  <ChefHat className="w-4 h-4 mr-1.5 text-orange-500" /> Notes to Kitchen?
+                </label>
+                <textarea
+                  value={kitchenNotes}
+                  onChange={(e) => setKitchenNotes(e.target.value.slice(0, 500))}
+                  placeholder="Less spicy, no onion, extra crispy… our chef will take care! 👨‍🍳"
+                  rows={2}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 resize-none"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Any allergy, spice level or special request — tell our kitchen directly.</p>
               </div>
             </div>
           </div>

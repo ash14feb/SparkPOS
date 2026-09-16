@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { todayInTimezone } from '../lib/datetime';
 import { Wallet, Plus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -12,7 +13,7 @@ interface Expense {
   created_by: number;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayInTimezone();
 
 export function ExpensesView() {
   const [expenses, setExpenses] = useState<Expense[]>([]);

@@ -30,6 +30,10 @@ interface ActiveOrder {
   subtotal: number;
   total: number;
   orderStatus: string;
+  customerName?: string;
+  customerPhone?: string;
+  customer_phone?: string;
+  kitchenNotes?: string;
 }
 
 export function TablesView() {
@@ -515,6 +519,12 @@ export function TablesView() {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Table {detailTable.table_no}</h2>
                 <p className="text-sm text-gray-500">{detailTable.current_order_code || detailOrder?.orderCode || 'Occupied'}</p>
+                {(detailOrder?.customerName || (detailOrder as any)?.customer_phone || detailOrder?.customerPhone) && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    👤 {detailOrder.customerName || '—'}
+                    {(detailOrder.customerPhone || (detailOrder as any)?.customer_phone) ? ` · 📞 ${detailOrder.customerPhone || (detailOrder as any)?.customer_phone}` : ''}
+                  </p>
+                )}
               </div>
               <button onClick={() => { setDetailTable(null); setDetailOrder(null); }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
@@ -537,6 +547,12 @@ export function TablesView() {
                     <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₹{detailOrder.subtotal}</span></div>
                     <div className="flex justify-between font-bold text-gray-900"><span>Total</span><span>₹{detailOrder.total}</span></div>
                     <div className="text-xs text-gray-500">Status: {detailOrder.orderStatus}</div>
+                    {detailOrder.kitchenNotes ? (
+                      <div className="mt-2 bg-orange-50 border border-orange-200 rounded-lg p-2.5 text-xs">
+                        <span className="font-bold text-orange-700">👨‍🍳 Kitchen Notes: </span>
+                        <span className="text-orange-900">{detailOrder.kitchenNotes}</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : (

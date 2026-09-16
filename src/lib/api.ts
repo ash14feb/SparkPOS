@@ -1,5 +1,5 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
-//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
+//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
 export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
 export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
 export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
@@ -93,6 +93,12 @@ export const api = {
       if (!res.ok) throw new Error(body.message || 'Could not place order');
       return body;
     }),
+  submitTableReview: (code: string, data: any) =>
+    fetch(`${API_BASE_URL}/api/tables/review/${code}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Could not save review');
+      return body;
+    }),
   
   // KOT
   getKot: (status?: string) => request(`/api/kot${status ? `?status=${status}` : ''}`),
@@ -101,6 +107,10 @@ export const api = {
   getDineOrders: (status?: string) => request(`/api/dineorders${status ? `?status=${status}` : ''}`),
   updateDineOrderStatus: (code: string, status: string) => request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
   
+  // Reviews (staff)
+  getReviews: (date?: string) => request(`/api/reviews${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+  getReview: (id: string | number) => request(`/api/reviews/${id}`),
+
   // Customers
   getCustomers: () => request('/api/customers'),
 

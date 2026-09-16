@@ -4,7 +4,7 @@ import { usePosStore } from '../store/usePosStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
-import { startOfDay, endOfDay, subDays } from 'date-fns';
+import { dbTimeMs, formatDateTime, timeAgo as timeAgoLib, todayInTimezone, dateKeyInTimezone, dayBoundsInTimezone, hourInTimezone } from '../lib/datetime';
 import { cn } from '../lib/utils';
 
 export function DashboardView() {
@@ -12,35 +12,47 @@ export function DashboardView() {
   const { user } = useAuthStore();
   
   const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'prev' | 'custom'>('today');
-  const [customStart, setCustomStart] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [customStart, setCustomStart] = useState<string>(todayInTimezone());
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [customEnd, setCustomEnd] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [customEnd, setCustomEnd] = useState<string>(todayInTimezone());
   
   const isAdmin = user?.user_type === 'admin' || user?.user_type === 'manager';
 
   // Force fetch on mount just to ensure fresh orders
   useEffect(() => {
     fetchBootstrap();
+    api.getExpenses().then((r: any) => setExpenses(r.data || [])).catch(() => {});
   }, []);
 
   const dateRange = useMemo(() => {
-    const now = new Date();
+    // All preset bounds are calendar days in the business timezone (default IST),
+    // independent of the device timezone.
+    const keyInTz = (offsetDays: number) => dateKeyInTimezone(Date.now() - offsetDays * 86400000, settings);
     switch (datePreset) {
-      case 'today':
-        return { start: startOfDay(now), end: endOfDay(now) };
-      case 'yesterday':
-        return { start: startOfDay(subDays(now, 1)), end: endOfDay(subDays(now, 1)) };
-      case 'prev':
-        return { start: startOfDay(subDays(now, 2)), end: endOfDay(subDays(now, 2)) };
-      case 'custom':
-        return { start: startOfDay(new Date(customStart)), end: endOfDay(new Date(customEnd)) };
+      case 'today': {
+        const b = dayBoundsInTimezone(keyInTz(0), settings);
+        return { start: new Date(b.start), end: new Date(b.end) };
+      }
+      case 'yesterday': {
+        const b = dayBoundsInTimezone(keyInTz(1), settings);
+        return { start: new Date(b.start), end: new Date(b.end) };
+      }
+      case 'prev': {
+        const b = dayBoundsInTimezone(keyInTz(2), settings);
+        return { start: new Date(b.start), end: new Date(b.end) };
+      }
+      case 'custom': {
+        const s = dayBoundsInTimezone(customStart, settings);
+        const e = dayBoundsInTimezone(customEnd, settings);
+        return { start: new Date(s.start), end: new Date(e.end) };
+      }
     }
-  }, [datePreset, customStart, customEnd]);
+  }, [datePreset, customStart, customEnd, settings]);
 
   const filteredOrders = useMemo(() => {
     return (orders || []).filter(order => {
-      // Handle timestamp both as ms and ISO string
-      const orderDate = new Date(order.timestamp).getTime();
+      const orderDate = dbTimeMs(order.timestamp);
       return orderDate >= dateRange.start.getTime() && orderDate <= dateRange.end.getTime();
     });
   }, [orders, dateRange]);
@@ -71,27 +83,35 @@ export function DashboardView() {
     return { totalSale, totalCustomers, cash, upi, card, dineInSale, takeawaySale };
   }, [filteredOrders]);
 
+  const expenseToday = useMemo(() => {
+    const t = todayInTimezone(settings);
+    return (expenses || []).filter((e: any) => String(e.expense_date).slice(0, 10) === t)
+      .reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+  }, [expenses, settings]);
+
+  const topSelling = useMemo(() => {
+    const m = new Map<string, { name: string; qty: number; revenue: number }>();
+    filteredOrders.forEach(order => (order.items || []).forEach((i: any) => {
+      const name = i.name || i.item_name || 'Item';
+      const qty = Number(i.quantity ?? i.qty ?? 1);
+      const cur = m.get(name) || { name, qty: 0, revenue: 0 };
+      cur.qty += qty; cur.revenue += Number(i.price || 0) * qty;
+      m.set(name, cur);
+    }));
+    return [...m.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
+  }, [filteredOrders]);
+
   const isFoodBusiness = String(settings?.businessType || '').toUpperCase().includes('FOOD');
   const dineInEnabled = settings?.dineInEnabled === true || settings?.dineInEnabled === 1;
 
-  const timeAgo = (ts: any) => {
-    const diff = Math.max(0, Date.now() - new Date(ts).getTime());
-    const secs = Math.floor(diff / 1000);
-    if (secs < 60) return `${secs} sec${secs === 1 ? '' : 's'} ago`;
-    const mins = Math.floor(secs / 60);
-    if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days} day${days === 1 ? '' : 's'} ago`;
-  };
+  const timeAgo = (ts: any) => timeAgoLib(ts);
 
   const hourlyData = useMemo(() => {
     const hours = Array.from({ length: 14 }, (_, i) => i + 10); // 10AM to 11PM (23:00)
     const counts = new Array(14).fill(0);
-    
+
     filteredOrders.forEach(order => {
-      const hour = new Date(order.timestamp).getHours();
+      const hour = hourInTimezone(order.timestamp, settings);
       if (hour >= 10 && hour <= 23) {
         counts[hour - 10] += (order.items || []).reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
       }
@@ -180,6 +200,10 @@ export function DashboardView() {
             <div className="flex items-center text-gray-500 mb-2"><Users className="w-4 h-4 mr-1" /><span className="text-xs font-medium">Customers</span></div>
             <p className="text-xl sm:text-2xl font-display font-bold text-gray-900">{metrics.totalCustomers}</p>
           </div>
+          <div className="col-span-1 md:col-span-1 bg-red-50 p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between">
+            <div className="flex items-center text-red-600 mb-2"><Wallet className="w-4 h-4 mr-1" /><span className="text-xs font-medium">Expense Today</span></div>
+            <p className="text-xl sm:text-2xl font-display font-bold text-red-700">{formatCurrency(expenseToday)}</p>
+          </div>
 
           {/* Payment Split - Inline on Mobile */}
           <div className="col-span-2 md:col-span-3 grid grid-cols-3 gap-2 sm:gap-4">
@@ -263,6 +287,23 @@ export function DashboardView() {
         </div>
 
         {/* Recent Sales Table */}
+        <div className="grid md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <h2 className="text-base font-bold text-gray-900 mb-3">Top Selling Items</h2>
+            {topSelling.length === 0 ? <p className="text-sm text-gray-500">No sales in this period</p> : (
+              <div className="space-y-2">
+                {topSelling.map((t, idx) => (
+                  <div key={t.name} className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">{idx + 1}</span>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{t.name}</p>
+                      <div className="h-1.5 bg-gray-100 rounded-full mt-1"><div className="h-1.5 bg-brand-500 rounded-full" style={{ width: `${Math.round((t.qty / Math.max(topSelling[0].qty, 1)) * 100)}%` }} /></div>
+                    </div>
+                    <div className="text-right"><p className="text-sm font-bold">{t.qty} sold</p><p className="text-xs text-gray-500">{formatCurrency(t.revenue)}</p></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
             <h2 className="text-base font-bold text-gray-900">Recent Sales Records</h2>
@@ -329,6 +370,7 @@ export function DashboardView() {
             </table>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Order Details Modal */}
@@ -377,7 +419,7 @@ export function DashboardView() {
                 <div className="text-right">
                   <p className="text-sm text-gray-500">Time</p>
                   <p className="font-medium text-gray-900">
-                    {new Date(selectedOrder.timestamp).toLocaleString()}
+                    {formatDateTime(selectedOrder.timestamp, settings)}
                   </p>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { Download, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { toBlob } from 'html-to-image';
 import { decodeBill, mapApiBillToBillData, type BillLinkData } from '../lib/billLink';
+import { formatDateTime } from '../lib/datetime';
 import { api } from '../lib/api';
 
 // Public page: shows ONLY the bill (no login, no nav).
@@ -83,7 +84,7 @@ export function BillView() {
           <h3 className="font-bold text-lg">{bill.s}</h3>
           {bill.h && <p className="text-xs text-gray-500 mt-1">{bill.h}</p>}
           <p className="text-xs text-gray-500 mt-2">Order: {bill.id}</p>
-          <p className="text-xs text-gray-500">{new Date(bill.ts).toLocaleString()}</p>
+          <p className="text-xs text-gray-500">{formatDateTime(bill.ts)}</p>
         </div>
         <div className="space-y-2 mb-4">
           {bill.items.map((item, i) => (

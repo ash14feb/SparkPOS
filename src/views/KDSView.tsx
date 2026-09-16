@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { ChefHat, Search, Clock, CheckCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { usePosStore } from '../store/usePosStore';
+import { dbTimeMs, formatTime } from '../lib/datetime';
 import toast from 'react-hot-toast';
 
 interface KOTItem {
@@ -20,6 +22,7 @@ interface KOT {
 }
 
 export function KDSView() {
+  const { settings } = usePosStore();
   const [kots, setKots] = useState<KOT[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -75,7 +78,7 @@ export function KDSView() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-start">
             {kots.map(kot => {
-              const minutesWaiting = Math.floor((new Date().getTime() - new Date(kot.created_at).getTime()) / 60000);
+              const minutesWaiting = Math.floor((Date.now() - dbTimeMs(kot.created_at)) / 60000);
               const isUrgent = minutesWaiting > 15;
               
               return (
@@ -96,7 +99,7 @@ export function KDSView() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm flex items-center opacity-90"><Clock className="w-3 h-3 mr-1"/> {minutesWaiting}m</div>
-                      <div className="text-xs mt-1">{new Date(kot.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                      <div className="text-xs mt-1">{formatTime(kot.created_at, settings)}</div>
                     </div>
                   </div>
                   

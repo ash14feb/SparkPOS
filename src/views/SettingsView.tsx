@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Settings, Save, Store, Receipt, Calculator, Printer, Package, CheckSquare, RefreshCw, ChevronRight, ArrowLeft } from 'lucide-react';
 import { usePosStore } from '../store/usePosStore';
 import { api } from '../lib/api';
+import { TIMEZONE_OPTIONS, DEFAULT_TIMEZONE } from '../lib/datetime';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 
@@ -130,6 +131,19 @@ export function SettingsView() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none"
                     placeholder="e.g. Rs. or $"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Business Timezone</label>
+                  <select
+                    value={settings.timezone || DEFAULT_TIMEZONE}
+                    onChange={(e) => handleChange('timezone', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none bg-white"
+                  >
+                    {TIMEZONE_OPTIONS.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1.5">All times, "today" filters and relative times (e.g. "5 min ago") use this timezone.</p>
                 </div>
               </div>
             )}

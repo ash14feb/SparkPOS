@@ -17,7 +17,8 @@ import {
   Bluetooth,
   Printer,
   UserRound,
-  ContactRound
+  ContactRound,
+  Star
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
@@ -35,6 +36,7 @@ const navItems = [
   { icon: ChefHat, label: 'Kitchen (KDS)', path: '/kds' },
   { icon: Package, label: 'Menu & Stock', path: '/menu' },
   { icon: Users, label: 'Customers', path: '/customers' },
+  { icon: Star, label: 'Customer Reviews', path: '/reviews' },
   { icon: CreditCard, label: 'Expenses', path: '/expenses' },
   { icon: BarChart3, label: 'Reports', path: '/reports' },
   { icon: ContactRound, label: 'Staff', path: '/staff' },
