@@ -1,5 +1,5 @@
-//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
+//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
 export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
 export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
 export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
