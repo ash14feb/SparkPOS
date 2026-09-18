@@ -332,10 +332,10 @@ export function PublicMenuView() {
             <p className="text-xs text-gray-400 mt-1">Please pay at the counter. Thank you!</p>
             {isHavingFood && Number(activeOrder.total ?? 0) > 0 && (
               <a
-                href={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder.total ?? 0).toFixed(2)}`}
-                className="mt-3 w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 flex items-center justify-center gap-2 text-center"
+                href={`intent://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder.total ?? 0).toFixed(2)}#Intent;scheme=upi;package=com.google.android.apps.nitas.wallet;end`}
+                className="mt-3 w-full py-3 bg-[#007bff] text-white rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 text-center"
               >
-                💳 Pay {currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)} via UPI
+                Pay {currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)} via Google Pay
               </a>
             )}
           </div>
@@ -388,10 +388,10 @@ export function PublicMenuView() {
             </button>
             {Number(activeOrder?.total ?? 0) > 0 && (
               <a
-                href={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder?.total ?? 0).toFixed(2)}`}
-                className="mt-2 w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 flex items-center justify-center gap-2 text-center"
+                href={`intent://pay?pa=aa@indiaybl&pn=Your%20Name&cu=INR&am=${Number(activeOrder?.total ?? 0).toFixed(2)}#Intent;scheme=upi;package=com.google.android.apps.nitas.wallet;end`}
+                className="mt-2 w-full py-3 bg-[#007bff] text-white rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 text-center"
               >
-                💳 Pay {currencySymbol || 'Rs.'}{Number(activeOrder?.total ?? 0).toFixed(2)} Directly via UPI
+                Pay {currencySymbol || 'Rs.'}{Number(activeOrder?.total ?? 0).toFixed(2)} via Google Pay
               </a>
             )}
           </div>
