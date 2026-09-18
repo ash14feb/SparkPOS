@@ -330,6 +330,14 @@ export function PublicMenuView() {
               <span>{currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1">Please pay at the counter. Thank you!</p>
+            {isHavingFood && Number(activeOrder.total ?? 0) > 0 && (
+              <a
+                href={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder.total ?? 0).toFixed(2)}`}
+                className="mt-3 w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 flex items-center justify-center gap-2 text-center"
+              >
+                💳 Pay {currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)} via UPI
+              </a>
+            )}
           </div>
         </div>
       )}
@@ -378,6 +386,14 @@ export function PublicMenuView() {
             >
               {isReviewing ? <Loader2 className="w-5 h-5 animate-spin" /> : activeOrder?.myReview ? 'Update My Review' : 'Submit My Review'}
             </button>
+            {Number(activeOrder?.total ?? 0) > 0 && (
+              <a
+                href={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder?.total ?? 0).toFixed(2)}`}
+                className="mt-2 w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 flex items-center justify-center gap-2 text-center"
+              >
+                💳 Pay {currencySymbol || 'Rs.'}{Number(activeOrder?.total ?? 0).toFixed(2)} Directly via UPI
+              </a>
+            )}
           </div>
         </div>
       )}
