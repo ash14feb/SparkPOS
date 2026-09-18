@@ -7,8 +7,8 @@ import { useSubscriptionStore } from '../store/useSubscriptionStore';
 
 // Yearly / 3-year pricing per region — edit here to change prices.
 const PRICING = {
-  INR: { symbol: '₹', yearly: 799, threeYear: 1999, label: 'INR' },
-  USD: { symbol: '$', yearly: 9.99, threeYear: 24.99, label: 'USD' },
+  INR: { symbol: '₹', yearly: 999, threeYear: 2499, label: 'INR' },
+  USD: { symbol: '$', yearly: 11.99, threeYear: 29.99, label: 'USD' },
 } as const;
 
 function detectRegion(): 'INR' | 'USD' {

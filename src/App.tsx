@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 
 import { AuthView } from './views/AuthView';
 import { Layout } from './components/Layout';
+import { InstallPrompt } from './components/InstallPrompt';
 import { DashboardView } from './views/DashboardView';
 import { POSView } from './views/POSView';
 import { GenericView } from './views/GenericView';
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster position="bottom-center" />
+      <InstallPrompt />
       <Routes>
         <Route path="/login" element={<AuthView />} />
         <Route path="/menu/:code" element={<PublicMenuView />} />
