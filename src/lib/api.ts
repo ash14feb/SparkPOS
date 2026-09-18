@@ -1,5 +1,5 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
-//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
+//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3001';
 export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
 export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
 export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
@@ -46,6 +46,7 @@ async function request(endpoint: string, options: RequestInit = {}) {
 export const api = {
   // Auth
   login: (data: any) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  googleLogin: (idToken: string, extra?: { businessName?: string; name?: string }) => request('/api/auth/google', { method: 'POST', body: JSON.stringify({ idToken, ...extra }) }),
   register: (data: any) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/api/auth/me'),
   getUsers: () => request('/api/auth/users'),
@@ -122,6 +123,10 @@ export const api = {
       return res.json();
     }),
   
+  // Subscription / trial
+  getSubscriptionStatus: () => request('/api/subscription/status'),
+  subscribe: (plan: '1YR' | '3YR') => request('/api/subscription/subscribe', { method: 'POST', body: JSON.stringify({ plan }) }),
+
   // Expenses
   getExpenses: () => request('/api/posexpenses'),
   addExpense: (data: { expense_date: string; category?: string; amount: number; notes?: string }) =>

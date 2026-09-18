@@ -11,8 +11,10 @@ import { usePrinterStore } from '../store/usePrinterStore';
 import { formatDateTime } from '../lib/datetime';
 import { BarcodeScannerModal } from '../components/BarcodeScanner';
 import { usePosGridStore, effectiveMobileCols, effectiveDesktopCols } from '../store/usePosGridStore';
+import { useNavigate } from 'react-router-dom';
 
 export function POSView() {
+  const navigate = useNavigate();
   const { menuItems, categories, fetchBootstrap, cart, addToCart, removeFromCart, updateQuantity, clearCart, isLoading, settings } = usePosStore();
   const { mobileCols, desktopCols } = usePosGridStore();
   // Items-per-row follows Profile settings (lg breakpoint = desktop).
@@ -31,8 +33,20 @@ export function POSView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileView, setMobileView] = useState<'menu' | 'cart'>('menu');
   
+  // Tell Layout whether the mobile cart is open so it can hide the
+  // hamburger + logo on the cart screen.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('sparkpos:mobile-view', { detail: mobileView }));
+  }, [mobileView]);
+
+  // Pay buttons stay enabled so a missing payment mode can toast.
+  const guardPay = (skipPrint: boolean) => {
+    if (cart.length === 0) return toast.error('Cart is empty');
+    if (!paymentMode) return toast.error('Please select a payment mode');
+    setPendingPay({ skipPrint });
+  };
   const billRef = useRef<HTMLDivElement>(null);
-  
+
   // Checkout State
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -47,6 +61,7 @@ export function POSView() {
   const { btConnected, btName, setBt } = usePrinterStore();
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  useEffect(() => { if (pendingPay) setPaySwipe(0); }, [pendingPay]);
 
   // Dine-in / Takeaway (default FOOD: DB default is FOOD; only RETAIL hides it,
   // so a failed settings fetch never silently disables the workflow).
@@ -72,6 +87,9 @@ export function POSView() {
   const [serveProgress, setServeProgress] = useState(0);
   const serveDragging = useRef(false);
   const serveTrackRef = useRef<HTMLDivElement>(null);
+  const [paySwipe, setPaySwipe] = useState(0);
+  const payDragging = useRef(false);
+  const payTrackRef = useRef<HTMLDivElement>(null);
 
   const fetchTables = async () => {
     try {
@@ -170,7 +188,8 @@ export function POSView() {
   };
 
   useEffect(() => {
-    fetchBootstrap();
+    // Bootstrap cached in store — only hits the server once per login.
+    if (!usePosStore.getState().bootstrapped) fetchBootstrap();
   }, []);
 
   const derivedCategories = ['All', ...new Set(menuItems.map(m => m.category || 'Uncategorized'))];
@@ -537,22 +556,45 @@ export function POSView() {
               </div>
               <p className="text-xs text-gray-400 mt-2">{cart.reduce((n, c) => n + c.quantity, 0)} item(s)</p>
             </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setPendingPay(null)}
-                disabled={isSubmitting}
-                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { const p = pendingPay; setPendingPay(null); processOrder(p.skipPrint); }}
-                disabled={isSubmitting || cart.length === 0}
-                className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center"
-              >
-                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'OK'}
-              </button>
+            <div
+              ref={payTrackRef}
+              className="relative h-14 bg-gray-100 rounded-xl overflow-hidden select-none touch-none border border-gray-200 mb-3"
+              onPointerMove={(e) => {
+                if (!payDragging.current || !payTrackRef.current) return;
+                const rect = payTrackRef.current.getBoundingClientRect();
+                const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+                setPaySwipe(pct);
+              }}
+              onPointerUp={() => {
+                payDragging.current = false;
+                if (paySwipe > 85) {
+                  const p = pendingPay;
+                  setPendingPay(null);
+                  setPaySwipe(0);
+                  processOrder(p.skipPrint);
+                } else {
+                  setPaySwipe(0);
+                }
+              }}
+              onPointerLeave={() => { if (payDragging.current) { payDragging.current = false; setPaySwipe(0); } }}
+            >
+              <div className="absolute inset-0 bg-brand-600 transition-all" style={{ width: `${paySwipe}%` }} />
+              <span className={cn('absolute inset-0 flex items-center justify-center text-sm font-bold', paySwipe > 40 ? 'text-white' : 'text-gray-600')}>
+                Swipe to Confirm →
+              </span>
+              <div
+                className="absolute top-1 bottom-1 w-14 bg-white rounded-lg shadow flex items-center justify-center cursor-grab font-bold text-brand-700"
+                style={{ left: `calc(${paySwipe}% - ${paySwipe * 0.56}px + 4px)` }}
+                onPointerDown={(e) => { payDragging.current = true; (e.target as HTMLElement).setPointerCapture?.(e.pointerId); }}
+              >→</div>
             </div>
+            <button
+              onClick={() => { setPendingPay(null); setPaySwipe(0); }}
+              disabled={isSubmitting}
+              className="w-full py-2.5 text-gray-500 font-medium hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
@@ -596,6 +638,9 @@ export function POSView() {
 
             <button onClick={handleResetAfterSuccess} className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-colors">
               New Order
+            </button>
+            <button onClick={() => { handleResetAfterSuccess(); navigate('/dashboard'); }} className="w-full mt-2 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors">
+              Dashboard
             </button>
           </div>
         </div>
@@ -805,7 +850,7 @@ export function POSView() {
               </button>
             </div>
             
-            <div className="flex space-x-2 overflow-x-auto custom-scrollbar pb-1 flex-1">
+            <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1 flex-1">
               {derivedCategories.map(cat => (
                 <button
                   key={cat}
@@ -978,13 +1023,29 @@ export function POSView() {
               <ShoppingCart className="w-5 h-5 mr-2 text-brand-600 hidden sm:block" /> Current Order
             </h2>
           </div>
-          <button 
-            onClick={clearCart}
-            disabled={cart.length === 0}
-            className="text-gray-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {!isEbill && settings?.printerConnectionType !== 'usb' && (
+              <button
+                onClick={!btConnected ? connectBluetooth : undefined}
+                title={btConnected ? 'Bluetooth Printer Connected' : 'Connect Bluetooth Printer'}
+                className={cn(
+                  'p-2 rounded-full border transition-colors',
+                  btConnected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-red-50 text-red-700 border-red-200'
+                )}
+              >
+                <Bluetooth className="w-5 h-5" />
+              </button>
+            )}
+            <button 
+              onClick={clearCart}
+              disabled={cart.length === 0}
+              className="text-gray-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
         {/* Customer Details */}
@@ -1060,7 +1121,7 @@ export function POSView() {
           {cart.length > 0 && (
             <div className="border-t border-gray-100 pt-4 pb-2 space-y-4">
               {/* Discount Bar */}
-              <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 flex items-center gap-2 overflow-x-auto custom-scrollbar">
+              <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Discount:</span>
                 <input 
                   type="number"
@@ -1190,9 +1251,6 @@ export function POSView() {
                 </button>
               </div>
             )}
-            {cart.length > 0 && !paymentMode && (
-              <p className="mb-2 text-center text-xs font-bold text-amber-600">Select a payment mode above to enable Pay</p>
-            )}
             <div className="flex gap-2">
               {settings?.enableKot && (
                 <button 
@@ -1208,8 +1266,8 @@ export function POSView() {
               
               {!settings?.orderAfterBill && (!isDineInFlow || isEbill) && (
               <button
-                onClick={() => setPendingPay({ skipPrint: true })}
-                disabled={cart.length === 0 || isSubmitting || !paymentMode || (isDineInFlow && (!selectedTable || !activeOrderCode || !served))}
+                onClick={() => guardPay(true)}
+                disabled={cart.length === 0 || isSubmitting || (isDineInFlow && (!selectedTable || !activeOrderCode || !served))}
                 className={cn(
                   "flex items-center justify-center py-3.5 px-2 rounded-xl font-bold transition-all text-sm sm:text-base",
                   isEbill
@@ -1230,8 +1288,8 @@ export function POSView() {
                 </button>
               ) : !isEbill ? (
               <button
-                onClick={() => setPendingPay({ skipPrint: false })}
-                disabled={cart.length === 0 || isSubmitting || !paymentMode || (isFood && orderType === 'DINEIN' && (!selectedTable || !activeOrderCode || !served))}
+                onClick={() => guardPay(false)}
+                disabled={cart.length === 0 || isSubmitting || (isFood && orderType === 'DINEIN' && (!selectedTable || !activeOrderCode || !served))}
                 className={cn(
                   "flex-[1.5] flex items-center justify-center py-3.5 px-2 rounded-xl bg-brand-600 text-white font-bold hover:bg-brand-700 transition-all shadow-md shadow-brand-500/20 text-sm sm:text-base",
                   settings?.orderAfterBill && "flex-1"

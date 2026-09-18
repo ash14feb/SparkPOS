@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api, removeAuthToken, setAuthToken } from '../lib/api';
+import { usePosStore } from './usePosStore';
+import { useSubscriptionStore } from './useSubscriptionStore';
 
 interface User {
   id: number;
@@ -15,6 +17,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: any) => Promise<void>;
+  googleLogin: (idToken: string, extra?: { businessName?: string; name?: string }) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -57,8 +60,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  googleLogin: async (idToken, extra) => {
+    const response = await api.googleLogin(idToken, extra);
+    const data = response.data || response;
+    if (data.token) setAuthToken(data.token);
+    set({ user: normalizeUser(data), isAuthenticated: true });
+  },
+
   logout: () => {
     removeAuthToken();
+    // Reset cached POS data so the next login fetches fresh items.
+    usePosStore.setState({ bootstrapped: false, menuItems: [], settings: {} });
+    useSubscriptionStore.getState().reset();
     set({ user: null, isAuthenticated: false });
   },
 

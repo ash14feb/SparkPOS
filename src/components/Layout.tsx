@@ -18,11 +18,13 @@ import {
   Printer,
   UserRound,
   ContactRound,
+  Crown,
   Star
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
 import { usePrinterStore } from '../store/usePrinterStore';
+import { useSubscriptionStore } from '../store/useSubscriptionStore';
 import { connectBtPrinter } from '../lib/bluetoothPrinter';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
@@ -45,14 +47,23 @@ const navItems = [
 ];
 
 export function Layout() {
-  const { logout, user } = useAuthStore();
+  const { logout, user, isAuthenticated } = useAuthStore();
   const { settings } = usePosStore();
   const { btConnected, setBt } = usePrinterStore();
+  const { status: subStatus, fetchStatus: fetchSubStatus } = useSubscriptionStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [occupiedCount, setOccupiedCount] = useState(0);
   const [attentionCount, setAttentionCount] = useState(0);
+  const [posMobileView, setPosMobileView] = useState<'menu' | 'cart'>('menu');
+
+  useEffect(() => {
+    const onView = (e: Event) => setPosMobileView((e as CustomEvent).detail === 'cart' ? 'cart' : 'menu');
+    window.addEventListener('sparkpos:mobile-view', onView);
+    return () => window.removeEventListener('sparkpos:mobile-view', onView);
+  }, []);
+  const isPosCart = location.pathname === '/pos' && posMobileView === 'cart';
 
   // Dine-in is opt-in: FOOD + "Dine-In Available? YES" (default NO => takeaway only,
   // no Tables entry points anywhere).
@@ -102,6 +113,17 @@ export function Layout() {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // Trial / subscription status — refreshed on login and route change.
+  useEffect(() => {
+    if (isAuthenticated) fetchSubStatus();
+  }, [isAuthenticated, fetchSubStatus]);
+  useEffect(() => {
+    if (isAuthenticated && location.pathname !== '/subscribe') fetchSubStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  const trialBlocked = !!subStatus?.expired && location.pathname !== '/subscribe';
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -113,6 +135,10 @@ export function Layout() {
     <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
       {/* Mobile Top Bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center px-4 z-40 shadow-sm">
+        {isPosCart ? (
+          <span className="font-display font-bold text-lg text-dark-900">Current Order</span>
+        ) : (
+        <>
         <button 
           onClick={() => setIsMobileMenuOpen(true)}
           className="p-2 -ml-2 mr-2 text-gray-600 hover:text-gray-900 focus:outline-none"
@@ -163,6 +189,8 @@ export function Layout() {
             )}
           </div>
         )}
+        </>
+        )}
       </div>
 
       {/* Mobile Backdrop */}
@@ -194,6 +222,26 @@ export function Layout() {
         </div>
         
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
+          {subStatus?.subscribed ? (
+            <div className="flex items-center px-3 py-2.5 mb-1 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
+              <Crown className="w-4 h-4 mr-2 text-amber-600 shrink-0" />
+              <p className="text-xs font-bold text-amber-800">PRO{subStatus?.plan ? ` · ${subStatus.plan === '3YR' ? '3-YEAR' : 'YEARLY'}` : ''}</p>
+            </div>
+          ) : subStatus?.trial ? (
+            <NavLink
+              to="/subscribe"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="block px-3 py-2.5 mb-1 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/20 hover:opacity-95 transition-all"
+            >
+              <div className="flex items-center">
+                <Crown className="w-4 h-4 mr-2 shrink-0" />
+                <p className="text-xs font-bold leading-tight">
+                  {subStatus.trialDaysLeft <= 1 ? 'Trial ends today!' : `Trial ends in ${subStatus.trialDaysLeft} day${subStatus.trialDaysLeft === 1 ? '' : 's'}`}
+                </p>
+              </div>
+              <p className="text-[11px] mt-0.5 ml-6 opacity-90 underline underline-offset-2">Subscribe to keep billing →</p>
+            </NavLink>
+          ) : null}
           {visibleNav.map((item) => (
             <NavLink
               key={item.path}
@@ -235,7 +283,30 @@ export function Layout() {
       <main className={cn(
         "flex-1 flex flex-col relative overflow-hidden min-h-0 pt-16 md:pt-0 pb-16"
       )}>
-        <Outlet />
+        {trialBlocked ? (
+          <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center bg-gray-50 p-6 no-chain-scroll">
+            <div className="bg-white rounded-3xl shadow-xl border border-gray-100 max-w-sm w-full p-8 text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg mb-4">
+                <Crown className="w-10 h-10 text-white" />
+              </div>
+              <h2 className="text-2xl font-display font-bold text-gray-900">Your free trial is over</h2>
+              <p className="text-gray-500 mt-2 mb-6 text-sm leading-relaxed">
+                Please subscribe to continue using SPARKPOS — billing, KDS, reports and everything else picks up right where you left off.
+              </p>
+              <button
+                onClick={() => navigate('/subscribe')}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-500 text-white font-display font-bold text-lg shadow-xl shadow-brand-500/30 hover:opacity-95 active:scale-[0.99] transition-all"
+              >
+                Subscribe
+              </button>
+              <button onClick={handleLogout} className="mt-3 text-sm font-medium text-gray-400 hover:text-gray-600">
+                Sign out
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </main>
 
       {/* Bottom Navigation (mobile + desktop) */}

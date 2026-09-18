@@ -1,14 +1,72 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+declare global {
+  interface Window { google?: any }
+}
+
 export function AuthView() {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuthStore();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [regBusinessName, setRegBusinessName] = useState('');
+  const [regName, setRegName] = useState('');
+  const googleDivRef = useRef<HTMLDivElement>(null);
+  const { login, googleLogin } = useAuthStore();
   const navigate = useNavigate();
+  const isLoginRef = useRef(isLogin);
+  isLoginRef.current = isLogin;
+  const regRef = useRef({ business: '', name: '' });
+  regRef.current = { business: regBusinessName, name: regName };
+
+  // Google Identity Services button (requires VITE_GOOGLE_CLIENT_ID).
+  // Login mode: signs in. Register mode: creates the business (needs the
+  // business name filled in first) and signs in.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    const render = () => {
+      if (!window.google?.accounts?.id || !googleDivRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (resp: any) => {
+          if (!resp?.credential) return;
+          try {
+            setGoogleLoading(true);
+            if (!isLoginRef.current && !regRef.current.business.trim()) {
+              toast.error('Please enter your business name first');
+              return;
+            }
+            await googleLogin(resp.credential, isLoginRef.current ? undefined : {
+              businessName: regRef.current.business.trim(),
+              name: regRef.current.name.trim(),
+            });
+            toast.success(isLoginRef.current ? 'Signed in with Google!' : 'Business registered with Google!');
+            navigate('/pos');
+          } catch (err: any) {
+            toast.error(err?.message || 'Google sign-in failed');
+          } finally {
+            setGoogleLoading(false);
+          }
+        },
+      });
+      window.google.accounts.id.renderButton(googleDivRef.current, {
+        theme: 'outline', size: 'large', width: 320,
+        text: isLoginRef.current ? 'signin_with' : 'signup_with',
+      });
+    };
+    if (window.google?.accounts?.id) { render(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = render;
+    document.head.appendChild(s);
+  }, [isLogin, googleLogin, navigate]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -65,13 +123,13 @@ export function AuthView() {
                 <div>
                   <label htmlFor="business_name" className="block text-sm font-medium text-gray-700">Business Name</label>
                   <div className="mt-1">
-                    <input id="business_name" name="business_name" type="text" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="Spark Cafe" />
+                    <input id="business_name" name="business_name" type="text" required value={regBusinessName} onChange={(e) => setRegBusinessName(e.target.value)} className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="Spark Cafe" />
                   </div>
                 </div>
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full Name</label>
                   <div className="mt-1">
-                    <input id="name" name="name" type="text" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="John Doe" />
+                    <input id="name" name="name" type="text" required value={regName} onChange={(e) => setRegName(e.target.value)} className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="John Doe" />
                   </div>
                 </div>
                 <div>
@@ -124,6 +182,24 @@ export function AuthView() {
               <div className="relative flex justify-center text-sm">
                 <span className="bg-white px-2 text-gray-500">Or continue with</span>
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-col items-center gap-2">
+              {GOOGLE_CLIENT_ID ? (
+                <>
+                  <div ref={googleDivRef} className="flex justify-center min-h-[40px]" />
+                  {googleLoading && <p className="text-xs text-gray-500">Signing in with Google...</p>}
+                  {!isLogin && (
+                    <p className="text-xs text-gray-400 text-center">
+                      Fill business name above first — Google sign-up will create your business.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 text-center">
+                  To enable “Login with Google”, set VITE_GOOGLE_CLIENT_ID in the frontend and GOOGLE_CLIENT_ID in the backend.
+                </p>
+              )}
             </div>
 
             <div className="mt-6 flex justify-center">

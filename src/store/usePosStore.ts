@@ -46,7 +46,8 @@ interface PosState {
   cart: CartItem[];
   settings: any;
   isLoading: boolean;
-  fetchBootstrap: () => Promise<void>;
+  bootstrapped: boolean;
+  fetchBootstrap: (force?: boolean) => Promise<void>;
   addToCart: (item: MenuItem, quantity?: number) => void;
   removeFromCart: (cartId: string) => void;
   updateQuantity: (cartId: string, quantity: number) => void;
@@ -61,8 +62,13 @@ export const usePosStore = create<PosState>((set, get) => ({
   cart: [],
   settings: {},
   isLoading: false,
+  bootstrapped: false,
 
-  fetchBootstrap: async () => {
+  fetchBootstrap: async (force = false) => {
+    // Load POS data only once per login session — POSView may remount on
+    // every tab switch, so skip the API call when we already have data.
+    if (get().bootstrapped && !force) return;
+    if (get().isLoading) return;
     set({ isLoading: true });
     try {
       const response = await api.bootstrap();
@@ -74,7 +80,8 @@ export const usePosStore = create<PosState>((set, get) => ({
         categories: data.categories || [],
         orders: data.orders || [],
         settings: data.settings || {},
-        isLoading: false 
+        isLoading: false,
+        bootstrapped: true,
       });
     } catch (error: any) {
       set({ isLoading: false });

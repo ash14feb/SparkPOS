@@ -107,6 +107,16 @@
   .pt-safe {
     padding-top: max(0.5rem, env(safe-area-inset-top));
   }
+  /* Hide scrollbars entirely but keep swipe-scroll (mobile carousels) */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
   /* Scroll containers: allow inner scroll but block chaining to body (no pull-refresh) */
   .no-chain-scroll {
     overscroll-behavior: contain;

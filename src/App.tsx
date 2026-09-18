@@ -31,6 +31,7 @@ import { StaffView } from './views/StaffView';
 import { ProfileView } from './views/ProfileView';
 import { ReviewsView } from './views/ReviewsView';
 import { ReportsView } from './views/ReportsView';
+import { SubscribeView } from './views/SubscribeView';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsView />} />
           <Route path="/staff" element={<StaffView />} />
           <Route path="/profile" element={<ProfileView />} />
+          <Route path="/subscribe" element={<SubscribeView />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
