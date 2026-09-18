@@ -1,3 +1,4 @@
+import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -331,12 +332,16 @@ export function PublicMenuView() {
             </div>
             <p className="text-xs text-gray-400 mt-1">Please pay at the counter. Thank you!</p>
             {isHavingFood && Number(activeOrder.total ?? 0) > 0 && (
-              <a
-                href={`intent://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder.total ?? 0).toFixed(2)}#Intent;scheme=upi;package=com.google.android.apps.nitas.wallet;end`}
-                className="mt-3 w-full py-3 bg-[#007bff] text-white rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 text-center"
-              >
-                Pay {currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)} via Google Pay
-              </a>
+              <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col items-center text-center">
+                <p className="font-bold text-gray-900 text-sm">Scan to Pay {currencySymbol || 'Rs.'}{Number(activeOrder.total ?? 0).toFixed(2)}</p>
+                <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200">
+                  <QRCodeSVG
+                    value={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder.total ?? 0).toFixed(2)}`}
+                    size={180}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2 break-all">upi://pay?pa=aaaaindia@ybl&amp;pn=9986439557&amp;cu=INR&amp;am={Number(activeOrder.total ?? 0).toFixed(2)}</p>
+              </div>
             )}
           </div>
         </div>
@@ -387,12 +392,15 @@ export function PublicMenuView() {
               {isReviewing ? <Loader2 className="w-5 h-5 animate-spin" /> : activeOrder?.myReview ? 'Update My Review' : 'Submit My Review'}
             </button>
             {Number(activeOrder?.total ?? 0) > 0 && (
-              <a
-                href={`intent://pay?pa=aa@indiaybl&pn=Your%20Name&cu=INR&am=${Number(activeOrder?.total ?? 0).toFixed(2)}#Intent;scheme=upi;package=com.google.android.apps.nitas.wallet;end`}
-                className="mt-2 w-full py-3 bg-[#007bff] text-white rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 text-center"
-              >
-                Pay {currencySymbol || 'Rs.'}{Number(activeOrder?.total ?? 0).toFixed(2)} via Google Pay
-              </a>
+              <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col items-center text-center">
+                <p className="font-bold text-gray-900 text-sm">Scan to Pay {currencySymbol || 'Rs.'}{Number(activeOrder?.total ?? 0).toFixed(2)}</p>
+                <div className="mt-2 p-2 bg-white rounded-lg border border-gray-200">
+                  <QRCodeSVG
+                    value={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(activeOrder?.total ?? 0).toFixed(2)}`}
+                    size={180}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>
