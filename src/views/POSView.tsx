@@ -512,7 +512,8 @@ export function POSView() {
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-gray-50 relative overscroll-none">
+    <>
+    <div id="pos-screen" className="flex-1 flex flex-col lg:flex-row h-full min-h-0 overflow-hidden bg-gray-50 relative overscroll-none">
       {/* Full-screen blocking loader while order is processing */}
       {isSubmitting && (
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm">
@@ -1320,62 +1321,6 @@ export function POSView() {
         </div>
       </div>
 
-      {/* Print-only bill: shown ONLY in window.print() preview / paper.
-          Screen: hidden. This is what the system print dialog previews,
-          so the "Processing..." overlay or POS UI never leaks into print. */}
-      <style>{`
-        #pos-print-receipt { display: none; }
-        @media print {
-          body * { visibility: hidden !important; }
-          #pos-print-receipt, #pos-print-receipt * { visibility: visible !important; }
-          #pos-print-receipt {
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important; top: 0 !important;
-            width: 72mm !important;
-            margin: 0 !important; padding: 0 2mm !important;
-            font-family: monospace !important;
-            font-size: 12px !important;
-            color: #000 !important;
-            background: #fff !important;
-          }
-        }
-      `}</style>
-      {completedOrder && (
-        <div id="pos-print-receipt" aria-hidden>
-          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
-            {settings?.restaurantName || 'Intelli POS'}
-          </div>
-          {settings?.receiptHeader && (
-            <div style={{ textAlign: 'center', marginTop: 2 }}>{settings.receiptHeader}</div>
-          )}
-          <div style={{ marginTop: 4 }}>Order: {completedOrder.id}</div>
-          <div>{formatDateTime(completedOrder.timestamp, settings)}</div>
-          {completedOrder.tableNo && <div>Table: {completedOrder.tableNo}</div>}
-          <div>--------------------------------</div>
-          {(completedOrder.items || []).map((it: any, i: number) => (
-            <div key={i}>
-              <div>{it.qty}x {it.name}</div>
-              <div style={{ textAlign: 'right' }}>
-                {(settings?.currencySymbol || 'Rs.')}{(Number(it.price || 0) * Number(it.qty || 0)).toFixed(2)}
-              </div>
-            </div>
-          ))}
-          <div>--------------------------------</div>
-          <div>Subtotal: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.subtotal || 0).toFixed(2)}</div>
-          {Number(completedOrder.discount || 0) > 0 && (
-            <div>Discount: -{(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.discount).toFixed(2)}</div>
-          )}
-          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
-            TOTAL: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.total || 0).toFixed(2)}
-          </div>
-          {completedOrder.paymentMode && <div>Paid via {completedOrder.paymentMode}</div>}
-          {settings?.receiptFooter && (
-            <div style={{ textAlign: 'center', marginTop: 4 }}>{settings.receiptFooter}</div>
-          )}
-        </div>
-      )}
-
       {/* Mobile View Toggle (Only shown when on Menu view) */}
       <div className={cn(
         "lg:hidden fixed bottom-16 inset-x-0 px-2 pt-2 pb-safe flex flex-col items-center z-30 pointer-events-none",
@@ -1402,6 +1347,67 @@ export function POSView() {
         )}
       </div>
     </div>
+
+    {/* Print-only bill: sibling of #pos-screen, shown ONLY in
+        window.print() preview / paper. display-based (not visibility /
+        absolute) so long bills flow onto extra pages instead of being
+        clipped after the first page. */}
+    <style>{`
+      #pos-print-receipt { display: none; }
+      @media print {
+        @page { size: auto; margin: 5mm; }
+        #pos-screen { display: none !important; }
+        nav, header, aside { display: none !important; }
+        #pos-print-receipt {
+          display: block !important;
+          width: 72mm !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          padding: 0 !important;
+          font-family: monospace !important;
+          font-size: 12px !important;
+          line-height: 1.45 !important;
+          color: #000 !important;
+          background: #fff !important;
+          overflow: visible !important;
+        }
+      }
+    `}</style>
+    {completedOrder && (
+      <div id="pos-print-receipt" aria-hidden>
+        <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
+          {settings?.restaurantName || 'Intelli POS'}
+        </div>
+        {settings?.receiptHeader && (
+          <div style={{ textAlign: 'center', marginTop: 2 }}>{settings.receiptHeader}</div>
+        )}
+        <div style={{ marginTop: 4 }}>Order: {completedOrder.id}</div>
+        <div>{formatDateTime(completedOrder.timestamp, settings)}</div>
+        {completedOrder.tableNo && <div>Table: {completedOrder.tableNo}</div>}
+        <div>--------------------------------</div>
+        {(completedOrder.items || []).map((it: any, i: number) => (
+          <div key={i} style={{ breakInside: 'avoid' }}>
+            <div>{it.qty}x {it.name}</div>
+            <div style={{ textAlign: 'right' }}>
+              {(settings?.currencySymbol || 'Rs.')}{(Number(it.price || 0) * Number(it.qty || 0)).toFixed(2)}
+            </div>
+          </div>
+        ))}
+        <div>--------------------------------</div>
+        <div>Subtotal: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.subtotal || 0).toFixed(2)}</div>
+        {Number(completedOrder.discount || 0) > 0 && (
+          <div>Discount: -{(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.discount).toFixed(2)}</div>
+        )}
+        <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
+          TOTAL: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.total || 0).toFixed(2)}
+        </div>
+        {completedOrder.paymentMode && <div>Paid via {completedOrder.paymentMode}</div>}
+        {settings?.receiptFooter && (
+          <div style={{ textAlign: 'center', marginTop: 4 }}>{settings.receiptFooter}</div>
+        )}
+      </div>
+    )}
+    </>
   );
 }
 
