@@ -306,8 +306,10 @@ export function POSView() {
       }
       
       setCompletedOrder(orderPayload);
-      
-      if (!skipPrint) {
+
+      const connType = settings?.printerConnectionType || 'ebill';
+
+      if (!skipPrint && connType === 'bluetooth') {
         try {
           await printReceiptBle({
             store: settings?.restaurantName || 'Intelli POS',
@@ -322,13 +324,27 @@ export function POSView() {
           toast.success('Receipt sent to printer');
         } catch (printErr: any) {
           console.error('BLE print failed', printErr);
-          // Fall back to system print dialog so the sale isn't blocked
+          // Fall back to system print dialog so the sale isn't blocked.
+          // Show success first + hide the "Processing..." overlay so the
+          // print preview captures the bill, not the loader.
           toast.error(printErr?.message || 'Print failed — showing system print dialog instead');
-          window.print();
+          setShowSuccess(true);
+          setIsSubmitting(false);
+          setTimeout(() => window.print(), 350);
+          return;
         }
       }
-      
+
       setShowSuccess(true);
+
+      if (!skipPrint && connType === 'usb') {
+        // Hide the "Processing..." overlay first so the print preview
+        // captures the bill. The printable receipt is rendered in the
+        // hidden #pos-print-receipt node (see bottom of this view).
+        setIsSubmitting(false);
+        setTimeout(() => window.print(), 350);
+        return;
+      }
       
     } catch (error: any) {
       toast.error(error.message || 'Failed to save order');
@@ -622,7 +638,7 @@ export function POSView() {
             )}
             
             <div className="grid grid-cols-3 gap-3 w-full mb-6">
-              <button onClick={() => toast.success('Printing bill...')} className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-3 rounded-xl border border-gray-200 transition-colors">
+              <button onClick={() => window.print()} className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 p-3 rounded-xl border border-gray-200 transition-colors">
                 <Printer className="w-6 h-6 text-gray-700 mb-2" />
                 <span className="text-xs font-bold text-gray-700">Bill</span>
               </button>
@@ -1303,6 +1319,62 @@ export function POSView() {
           </div>
         </div>
       </div>
+
+      {/* Print-only bill: shown ONLY in window.print() preview / paper.
+          Screen: hidden. This is what the system print dialog previews,
+          so the "Processing..." overlay or POS UI never leaks into print. */}
+      <style>{`
+        #pos-print-receipt { display: none; }
+        @media print {
+          body * { visibility: hidden !important; }
+          #pos-print-receipt, #pos-print-receipt * { visibility: visible !important; }
+          #pos-print-receipt {
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important; top: 0 !important;
+            width: 72mm !important;
+            margin: 0 !important; padding: 0 2mm !important;
+            font-family: monospace !important;
+            font-size: 12px !important;
+            color: #000 !important;
+            background: #fff !important;
+          }
+        }
+      `}</style>
+      {completedOrder && (
+        <div id="pos-print-receipt" aria-hidden>
+          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
+            {settings?.restaurantName || 'Intelli POS'}
+          </div>
+          {settings?.receiptHeader && (
+            <div style={{ textAlign: 'center', marginTop: 2 }}>{settings.receiptHeader}</div>
+          )}
+          <div style={{ marginTop: 4 }}>Order: {completedOrder.id}</div>
+          <div>{formatDateTime(completedOrder.timestamp, settings)}</div>
+          {completedOrder.tableNo && <div>Table: {completedOrder.tableNo}</div>}
+          <div>--------------------------------</div>
+          {(completedOrder.items || []).map((it: any, i: number) => (
+            <div key={i}>
+              <div>{it.qty}x {it.name}</div>
+              <div style={{ textAlign: 'right' }}>
+                {(settings?.currencySymbol || 'Rs.')}{(Number(it.price || 0) * Number(it.qty || 0)).toFixed(2)}
+              </div>
+            </div>
+          ))}
+          <div>--------------------------------</div>
+          <div>Subtotal: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.subtotal || 0).toFixed(2)}</div>
+          {Number(completedOrder.discount || 0) > 0 && (
+            <div>Discount: -{(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.discount).toFixed(2)}</div>
+          )}
+          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
+            TOTAL: {(settings?.currencySymbol || 'Rs.')}{Number(completedOrder.total || 0).toFixed(2)}
+          </div>
+          {completedOrder.paymentMode && <div>Paid via {completedOrder.paymentMode}</div>}
+          {settings?.receiptFooter && (
+            <div style={{ textAlign: 'center', marginTop: 4 }}>{settings.receiptFooter}</div>
+          )}
+        </div>
+      )}
 
       {/* Mobile View Toggle (Only shown when on Menu view) */}
       <div className={cn(
