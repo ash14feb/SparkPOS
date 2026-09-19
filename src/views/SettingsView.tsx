@@ -26,9 +26,18 @@ export function SettingsView() {
     try {
       const response = await api.saveSettings(settings);
       const data = response.data || response;
+      // Optimistically keep what the user just saved (backend echoes saved settings)
+      if (data && typeof data === 'object') {
+        const saved = (data as any).settings || data;
+        if (saved && typeof saved === 'object' && Object.keys(saved).length) {
+          setSettings((prev) => ({ ...prev, ...saved }));
+        }
+      }
       toast.success('Settings saved successfully!');
-      // Re-fetch bootstrap to ensure global state is aligned
-      await fetchBootstrap();
+      // Force re-fetch: fetchBootstrap() without `true` early-returns when
+      // already bootstrapped, leaving the store stale — which is why the
+      // printer type appeared to revert on navigation/remount.
+      await fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to save settings');
     } finally {
