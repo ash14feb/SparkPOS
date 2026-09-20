@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { usePosStore, MenuItem } from '../store/usePosStore';
 import { Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, ShoppingCart, ListCollapse, X, Package, Printer, CheckCircle2, Loader2, Bluetooth, Share2, FileText, ArrowLeft, UtensilsCrossed, ShoppingBag, Armchair, Check, ScanLine } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -1348,16 +1349,17 @@ export function POSView() {
       </div>
     </div>
 
-    {/* Print-only bill: sibling of #pos-screen, shown ONLY in
-        window.print() preview / paper. display-based (not visibility /
-        absolute) so long bills flow onto extra pages instead of being
-        clipped after the first page. */}
+    {/* Print-only bill: portaled to document.body (OUTSIDE the app
+        shell), shown ONLY in window.print() preview / paper. In print,
+        every direct body child except the receipt is hidden — so the
+        sidebar, top bar, bottom nav, toasts and POS UI can never leak
+        into the preview. Normal-flow (not absolute) so long bills flow
+        onto extra pages instead of clipping after page one. */}
     <style>{`
       #pos-print-receipt { display: none; }
       @media print {
         @page { size: auto; margin: 5mm; }
-        #pos-screen { display: none !important; }
-        nav, header, aside { display: none !important; }
+        body > *:not(#pos-print-receipt) { display: none !important; }
         #pos-print-receipt {
           display: block !important;
           width: 72mm !important;
@@ -1373,7 +1375,7 @@ export function POSView() {
         }
       }
     `}</style>
-    {completedOrder && (
+    {completedOrder && typeof document !== 'undefined' && createPortal(
       <div id="pos-print-receipt" aria-hidden>
         <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '15px' }}>
           {settings?.restaurantName || 'Intelli POS'}
@@ -1405,7 +1407,8 @@ export function POSView() {
         {settings?.receiptFooter && (
           <div style={{ textAlign: 'center', marginTop: 4 }}>{settings.receiptFooter}</div>
         )}
-      </div>
+      </div>,
+      document.body
     )}
     </>
   );
