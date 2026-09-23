@@ -330,6 +330,7 @@ export function POSView() {
           // print preview captures the bill, not the loader.
           toast.error(printErr?.message || 'Print failed — showing system print dialog instead');
           setShowSuccess(true);
+          usePosStore.getState().refreshInBackground();
           setIsSubmitting(false);
           setTimeout(() => window.print(), 350);
           return;
@@ -337,6 +338,9 @@ export function POSView() {
       }
 
       setShowSuccess(true);
+      // Refresh store in background so Dashboard / menu are fresh
+      // (no skeleton flash — refreshInBackground skips isLoading).
+      usePosStore.getState().refreshInBackground();
 
       if (!skipPrint && connType === 'usb') {
         // Hide the "Processing..." overlay first so the print preview
@@ -507,9 +511,33 @@ export function POSView() {
     // No refetch — just close the popup so POS stays instant
   };
 
-  const handlePrintKOT = () => {
-    if (cart.length === 0) return toast.error('Cart is empty');
-    toast.success('KOT printed successfully');
+  const [isKotSending, setIsKotSending] = useState(false);
+
+  const handlePrintKOT = async (orderOverride?: any) => {
+    const lines = orderOverride?.items || cart.map((c: any) => ({
+      name: c.name, qty: c.quantity ?? c.qty ?? 1, notes: c.notes || '',
+    }));
+    if (!lines.length) return toast.error('Cart is empty');
+    const tid = isFood && orderType === 'DINEIN' && selectedTable ? tableIdOf(selectedTable) : null;
+    const orderCode: string =
+      orderOverride?.id || orderOverride?.orderCode || activeOrderCode || `KOT-${Date.now()}`;
+    try {
+      setIsKotSending(true);
+      await api.createKot({
+        order_code: orderCode,
+        table_id: tid != null ? Number(tid) : null,
+        items: lines.map((it: any) => ({
+          name: it.name,
+          qty: Number(it.qty ?? it.quantity ?? 1) || 1,
+          notes: it.notes || '',
+        })),
+      });
+      toast.success('KOT sent to kitchen!');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to send KOT');
+    } finally {
+      setIsKotSending(false);
+    }
   };
 
   return (
@@ -644,8 +672,8 @@ export function POSView() {
                 <Printer className="w-6 h-6 text-gray-700 mb-2" />
                 <span className="text-xs font-bold text-gray-700">Bill</span>
               </button>
-              <button onClick={handlePrintKOT} className="flex flex-col items-center justify-center bg-amber-50 hover:bg-amber-100 p-3 rounded-xl border border-amber-200 transition-colors">
-                <FileText className="w-6 h-6 text-amber-700 mb-2" />
+              <button onClick={() => { handlePrintKOT(completedOrder); }} disabled={isKotSending} className="flex flex-col items-center justify-center bg-amber-50 hover:bg-amber-100 p-3 rounded-xl border border-amber-200 transition-colors disabled:opacity-50">
+                {isKotSending ? <Loader2 className="w-6 h-6 text-amber-700 mb-2 animate-spin" /> : <FileText className="w-6 h-6 text-amber-700 mb-2" />}
                 <span className="text-xs font-bold text-amber-700">KOT</span>
               </button>
               <button onClick={() => setShowWhatsAppPreview(true)} className="flex flex-col items-center justify-center bg-green-50 hover:bg-green-100 p-3 rounded-xl border border-green-200 transition-colors">
@@ -1271,13 +1299,13 @@ export function POSView() {
             )}
             <div className="flex gap-2">
               {settings?.enableKot && (
-                <button 
-                  onClick={handlePrintKOT}
-                  disabled={cart.length === 0 || isSubmitting}
+                <button
+                  onClick={() => handlePrintKOT()}
+                  disabled={cart.length === 0 || isSubmitting || isKotSending}
                   className="flex items-center justify-center px-3 sm:px-4 rounded-xl bg-amber-100 text-amber-800 font-bold hover:bg-amber-200 transition-all disabled:opacity-50"
-                  title="Print KOT"
+                  title="Send KOT to kitchen"
                 >
-                  <Printer className="w-5 h-5 sm:mr-1.5" /> 
+                  {isKotSending ? <Loader2 className="w-5 h-5 sm:mr-1.5 animate-spin" /> : <Printer className="w-5 h-5 sm:mr-1.5" />}
                   <span className="hidden sm:inline">KOT</span>
                 </button>
               )}

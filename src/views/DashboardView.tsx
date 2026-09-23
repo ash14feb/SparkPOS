@@ -21,7 +21,7 @@ export function DashboardView() {
 
   // Force fetch on mount just to ensure fresh orders
   useEffect(() => {
-    fetchBootstrap();
+    fetchBootstrap(true);
     api.getExpenses().then((r: any) => setExpenses(r.data || [])).catch(() => {});
   }, []);
 
@@ -125,7 +125,7 @@ export function DashboardView() {
     try {
       await api.deletePosOrder(id);
       toast.success('Order deleted');
-      fetchBootstrap(); // Refresh
+      fetchBootstrap(true); // Refresh
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete order');
     }

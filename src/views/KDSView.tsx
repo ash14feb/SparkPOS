@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { ChefHat, Search, Clock, CheckCircle } from 'lucide-react';
+import { ChefHat, Search, Clock, CheckCircle, Flame, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { usePosStore } from '../store/usePosStore';
 import { dbTimeMs, formatTime } from '../lib/datetime';
@@ -21,28 +21,47 @@ interface KOT {
   items: KOTItem[];
 }
 
+type KotTab = 'PENDING' | 'PREPARING' | 'COMPLETED';
+
 export function KDSView() {
   const { settings } = usePosStore();
   const [kots, setKots] = useState<KOT[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [tab, setTab] = useState<KotTab>('PENDING');
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchKOTs();
-    
+
     // Auto-refresh KDS every 30 seconds
     const interval = setInterval(fetchKOTs, 30000);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const fetchKOTs = async () => {
     try {
       setIsLoading(true);
-      const res = await api.getKot('PENDING'); // or omit to get all and filter locally
+      const res = await api.getKot(tab);
       setKots(res.data || []);
     } catch (error: any) {
       toast.error(error.message || 'Failed to fetch KOTs');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const setStatus = async (kot: KOT, status: 'PREPARING' | 'COMPLETED') => {
+    try {
+      setUpdatingId(kot.id);
+      await api.updateKotStatus(kot.id, status);
+      // Remove from current tab immediately — no waiting for next poll.
+      setKots((prev) => prev.filter((k) => k.id !== kot.id));
+      toast.success(status === 'COMPLETED' ? `Order ${kot.order_code} ready!` : `Preparing ${kot.order_code}...`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update ticket');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -56,12 +75,28 @@ export function KDSView() {
             <p className="text-sm text-gray-500">Live ticket management</p>
           </div>
         </div>
-        <button 
-          onClick={fetchKOTs}
-          className="flex items-center px-4 py-2 bg-brand-50 text-brand-700 text-sm font-medium rounded-lg hover:bg-brand-100 transition-colors"
-        >
-          <Clock className="w-4 h-4 mr-2" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-gray-100 p-1 rounded-xl">
+            {(['PENDING', 'PREPARING', 'COMPLETED'] as KotTab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                  tab === t ? 'bg-white text-gray-900 shadow' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                {t === 'PENDING' ? 'New' : t === 'PREPARING' ? 'Cooking' : 'Ready'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={fetchKOTs}
+            className="flex items-center px-4 py-2 bg-brand-50 text-brand-700 text-sm font-medium rounded-lg hover:bg-brand-100 transition-colors"
+          >
+            <Clock className="w-4 h-4 mr-2" /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6 custom-scrollbar">
@@ -121,10 +156,27 @@ export function KDSView() {
                     </ul>
                   </div>
                   
-                  <div className="p-3 bg-gray-50 border-t border-gray-100">
-                    <button className="w-full flex items-center justify-center py-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 transition-colors shadow-sm">
-                      <CheckCircle className="w-5 h-5 mr-2" /> Mark Ready
-                    </button>
+                  <div className="p-3 bg-gray-50 border-t border-gray-100 space-y-2">
+                    {kot.status === 'PENDING' && (
+                      <button
+                        onClick={() => setStatus(kot, 'PREPARING')}
+                        disabled={updatingId === kot.id}
+                        className="w-full flex items-center justify-center py-3 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        {updatingId === kot.id ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Flame className="w-5 h-5 mr-2" />}
+                        Start Cooking
+                      </button>
+                    )}
+                    {kot.status !== 'COMPLETED' && (
+                      <button
+                        onClick={() => setStatus(kot, 'COMPLETED')}
+                        disabled={updatingId === kot.id}
+                        className="w-full flex items-center justify-center py-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 transition-colors shadow-sm disabled:opacity-50"
+                      >
+                        {updatingId === kot.id ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle className="w-5 h-5 mr-2" />}
+                        Mark Ready
+                      </button>
+                    )}
                   </div>
                 </div>
               );

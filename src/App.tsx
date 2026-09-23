@@ -11,6 +11,7 @@ import {
   Settings
 } from 'lucide-react';
 import { useAuthStore } from './store/useAuthStore';
+import { canAccessPath, landingPath, normRole } from './lib/roles';
 import { useEffect } from 'react';
 
 import { AuthView } from './views/AuthView';
@@ -53,6 +54,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Role gate: kitchen staff get bounced to /kds, non-admins away from
+// admin-only pages (settings/staff). Applied per route below.
+function RoleRoute({ children }: { children: React.ReactElement }) {
+  const { user } = useAuthStore();
+  const location = useLocation();
+  if (!canAccessPath(user, location.pathname)) {
+    return <Navigate to={landingPath(normRole(user))} replace />;
+  }
+  return children;
+}
+
+// Role-aware landing for `/` (kitchen staff start at the KDS).
+function Landing() {
+  const { user } = useAuthStore();
+  return <Navigate to={landingPath(normRole(user))} replace />;
+}
+
 export default function App() {
   const { checkAuth } = useAuthStore();
 
@@ -71,22 +89,22 @@ export default function App() {
         <Route path="/bill/:orderId" element={<BillView />} />
         
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardView />} />
-          <Route path="/pos" element={<POSView />} />
-          <Route path="/orders" element={<OrdersView />} />
-          <Route path="/tables" element={<TablesView />} />
-          <Route path="/kds" element={<KDSView />} />
-          <Route path="/menu" element={<InventoryView />} />
-          <Route path="/customers" element={<CustomersView />} />
-          <Route path="/reviews" element={<ReviewsView />} />
-          <Route path="/expenses" element={<ExpensesView />} />
-          <Route path="/reports" element={<ReportsView />} />
-          <Route path="/settings" element={<SettingsView />} />
-          <Route path="/staff" element={<StaffView />} />
+          <Route path="/" element={<Landing />} />
+          <Route path="/dashboard" element={<RoleRoute><DashboardView /></RoleRoute>} />
+          <Route path="/pos" element={<RoleRoute><POSView /></RoleRoute>} />
+          <Route path="/orders" element={<RoleRoute><OrdersView /></RoleRoute>} />
+          <Route path="/tables" element={<RoleRoute><TablesView /></RoleRoute>} />
+          <Route path="/kds" element={<RoleRoute><KDSView /></RoleRoute>} />
+          <Route path="/menu" element={<RoleRoute><InventoryView /></RoleRoute>} />
+          <Route path="/customers" element={<RoleRoute><CustomersView /></RoleRoute>} />
+          <Route path="/reviews" element={<RoleRoute><ReviewsView /></RoleRoute>} />
+          <Route path="/expenses" element={<RoleRoute><ExpensesView /></RoleRoute>} />
+          <Route path="/reports" element={<RoleRoute><ReportsView /></RoleRoute>} />
+          <Route path="/settings" element={<RoleRoute><SettingsView /></RoleRoute>} />
+          <Route path="/staff" element={<RoleRoute><StaffView /></RoleRoute>} />
           <Route path="/profile" element={<ProfileView />} />
           <Route path="/subscribe" element={<SubscribeView />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Landing />} />
         </Route>
       </Routes>
     </BrowserRouter>

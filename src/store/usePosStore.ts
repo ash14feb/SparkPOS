@@ -48,6 +48,7 @@ interface PosState {
   isLoading: boolean;
   bootstrapped: boolean;
   fetchBootstrap: (force?: boolean) => Promise<void>;
+  refreshInBackground: () => Promise<void>;
   addToCart: (item: MenuItem, quantity?: number) => void;
   removeFromCart: (cartId: string) => void;
   updateQuantity: (cartId: string, quantity: number) => void;
@@ -88,6 +89,24 @@ export const usePosStore = create<PosState>((set, get) => ({
       console.error('Failed to fetch bootstrap data', error);
       toast.error(error.message || 'Failed to load POS data from server');
       // Let it fail loudly so we can debug API issues instead of silently showing mock data
+    }
+  },
+
+  // Silent refresh (no isLoading flash, no error toast): keeps Dashboard /
+  // POS menu fresh after an order or menu edit without skeleton flicker.
+  refreshInBackground: async () => {
+    try {
+      const response = await api.bootstrap();
+      const data = response.data || response;
+      set({
+        menuItems: data.menuItems || [],
+        categories: data.categories || [],
+        orders: data.orders || [],
+        settings: data.settings || {},
+        bootstrapped: true,
+      });
+    } catch (error) {
+      console.error('Background refresh failed', error);
     }
   },
 

@@ -11,7 +11,7 @@ export function InventoryView() {
 
   // Load items on direct visit/refresh (POS is not the only entry point)
   useEffect(() => {
-    if (menuItems.length === 0) fetchBootstrap();
+    if (menuItems.length === 0) fetchBootstrap(true);
   }, []);
 
   return (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Users, Plus, Pencil, Trash2, Mail, RefreshCw, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../store/useAuthStore';
+import { usePosStore } from '../store/usePosStore';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 
@@ -27,6 +28,13 @@ export function StaffView() {
 
   const role = (user?.user_type || '').toLowerCase();
   const isAdmin = role === 'admin' || role === 'super_admin';
+  const { settings, fetchBootstrap } = usePosStore();
+  const isFoodBusiness = String(settings?.businessType || '').toUpperCase().includes('FOOD');
+
+  useEffect(() => {
+    if (!settings || Object.keys(settings).length === 0) fetchBootstrap(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { fetchUsers(); }, []);
 
@@ -221,6 +229,12 @@ export function StaffView() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none">
                   <option value="staff">Staff</option>
                   <option value="manager">Manager</option>
+                  {isFoodBusiness && (
+                    <>
+                      <option value="kitchen">Kitchen Staff</option>
+                      <option value="captain">Captain</option>
+                    </>
+                  )}
                 </select>
               </div>
               <button onClick={handleSave} disabled={isSaving}

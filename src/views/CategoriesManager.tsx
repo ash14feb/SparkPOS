@@ -23,7 +23,7 @@ export function CategoriesManager() {
       await api.createCategory({ name: newCategory.trim() });
       toast.success('Category created');
       setNewCategory('');
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to create category');
     } finally {
@@ -44,7 +44,7 @@ export function CategoriesManager() {
       await api.updateCategory(id, { name: editName.trim() });
       toast.success('Category updated');
       setEditingId(null);
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to update category');
     } finally {
@@ -58,7 +58,7 @@ export function CategoriesManager() {
     try {
       await api.deleteCategory(id);
       toast.success('Category deleted');
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete category (it may contain active items)');
     }

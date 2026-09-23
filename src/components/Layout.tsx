@@ -29,6 +29,7 @@ import { connectBtPrinter } from '../lib/bluetoothPrinter';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
+import { canAccessPath, normRole } from '../lib/roles';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -129,7 +130,13 @@ export function Layout() {
     navigate('/login');
   };
 
-  const visibleNav = dineInEnabled ? navItems : navItems.filter((i) => i.path !== '/tables');
+  const myRole = normRole(user);
+  // Sidebar: hide dine-in tables when disabled AND any page the role
+  // may not open (kitchen => KDS + Profile only, non-admins => no
+  // Settings/Staff). Profile stays visible to every role.
+  const visibleNav = navItems
+    .filter((i) => (dineInEnabled ? true : i.path !== '/tables'))
+    .filter((i) => canAccessPath(myRole, i.path));
 
   return (
     <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
@@ -309,13 +316,21 @@ export function Layout() {
         )}
       </main>
 
-      {/* Bottom Navigation (mobile + desktop) */}
+      {/* Bottom Navigation (mobile + desktop) — role filtered so
+          kitchen staff only get Kitchen + More, everyone keeps Profile. */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] h-16">
+          {myRole === 'kitchen' ? (
+          <NavLink to="/kds" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
+            <ChefHat className="w-5 h-5 mb-1" />
+            <span className="text-[10px] font-medium">Kitchen</span>
+          </NavLink>
+          ) : (
           <NavLink to="/dashboard" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <LayoutDashboard className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Home</span>
           </NavLink>
-          {dineInEnabled && (
+          )}
+          {myRole !== 'kitchen' && dineInEnabled && (
           <NavLink to="/tables" className={({isActive}) => cn("relative flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <UtensilsCrossed className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">{attentionCount > 0 ? `🟡 ${attentionCount} Ordered` : occupiedCount > 0 ? `🔴 ${occupiedCount} Tables` : 'Tables'}</span>
@@ -326,14 +341,18 @@ export function Layout() {
             )}
           </NavLink>
           )}
+          {myRole !== 'kitchen' && (
           <NavLink to="/pos" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <ShoppingCart className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">POS</span>
           </NavLink>
+          )}
+          {myRole !== 'kitchen' && (
           <NavLink to="/orders" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <ListOrdered className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">Transactions</span>
           </NavLink>
+          )}
           <NavLink to="/profile" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <UserRound className="w-5 h-5 mb-1" />
             <span className="text-[10px] font-medium">More</span>

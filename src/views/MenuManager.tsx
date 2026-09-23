@@ -68,7 +68,7 @@ export function MenuManager() {
       const res = await api.createCategory({ name: quickCategory });
       toast.success('Category added');
       setQuickCategory('');
-      fetchBootstrap();
+      fetchBootstrap(true);
       if (res.data?.name) {
         setFormData(prev => ({ ...prev, category: res.data.name }));
       }
@@ -90,7 +90,7 @@ export function MenuManager() {
       setIsDeleting(true);
       await api.deleteMenuItem(itemToDelete);
       toast.success('Item deleted');
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete item');
     } finally {
@@ -115,7 +115,7 @@ export function MenuManager() {
       await Promise.all(selectedIds.map((id) => api.deleteMenuItem(id)));
       toast.success(`${selectedIds.length} item(s) deleted`);
       clearSelection();
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete items');
     } finally {
@@ -139,7 +139,7 @@ export function MenuManager() {
       toast.success(`${selectedIds.length} item(s) moved to ${bulkCategory}`);
       clearSelection();
       setShowCategoryPopup(false);
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to update category');
     } finally {
@@ -165,7 +165,7 @@ export function MenuManager() {
       }
       setIsEditing(false);
       setFormData({ ...EMPTY_FORM });
-      fetchBootstrap();
+      fetchBootstrap(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to save item');
     } finally {
@@ -587,7 +587,7 @@ export function MenuManager() {
           isOpen={showAIModal} 
           onClose={() => setShowAIModal(false)} 
           categories={categories}
-          onImportSuccess={fetchBootstrap}
+          onImportSuccess={() => fetchBootstrap(true)}
         />
       )}
 

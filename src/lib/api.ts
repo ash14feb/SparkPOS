@@ -1,5 +1,5 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://intelli-posapi.vercel.app';
-//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3001';
+//export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'http://localhost:3000';
 export const getAuthToken = () => localStorage.getItem('scannex-pos-auth');
 export const setAuthToken = (token: string) => localStorage.setItem('scannex-pos-auth', token);
 export const removeAuthToken = () => localStorage.removeItem('scannex-pos-auth');
@@ -103,6 +103,10 @@ export const api = {
   
   // KOT
   getKot: (status?: string) => request(`/api/kot${status ? `?status=${status}` : ''}`),
+  createKot: (data: { order_code: string; table_id?: number | null; items: { name: string; qty: number; notes?: string }[] }) =>
+    request('/api/kot', { method: 'POST', body: JSON.stringify(data) }),
+  updateKotStatus: (id: number, status: 'PENDING' | 'PREPARING' | 'COMPLETED') =>
+    request(`/api/kot/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
   
   // Orders
   getDineOrders: (status?: string) => request(`/api/dineorders${status ? `?status=${status}` : ''}`),
