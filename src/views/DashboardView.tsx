@@ -19,10 +19,15 @@ export function DashboardView() {
   
   const isAdmin = user?.user_type === 'admin' || user?.user_type === 'manager';
 
-  // Force fetch on mount just to ensure fresh orders
+  // Fresh orders on mount, but silent when the store already has data —
+  // a full fetchBootstrap(true) would flash the POS menu skeleton if the
+  // user hops Dashboard -> POS mid-flight. POS itself only loads once
+  // (on login / menu update), so never disturb isLoading here afterwards.
   useEffect(() => {
-    fetchBootstrap(true);
+    if (!usePosStore.getState().bootstrapped) fetchBootstrap(true);
+    else usePosStore.getState().refreshInBackground();
     api.getExpenses().then((r: any) => setExpenses(r.data || [])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dateRange = useMemo(() => {
@@ -66,10 +71,18 @@ export function DashboardView() {
     let dineInSale = 0;
     let takeawaySale = 0;
 
+    // Customers = distinct people (phone preferred, then name). Orders with
+    // no customer info each count as one walk-in visit. (Previously this
+    // summed item quantities, so 2 orders with 3 items showed "3".)
+    const seenCustomers = new Set<string>();
     filteredOrders.forEach(order => {
       totalSale += Number(order.total) || 0;
-      totalCustomers += (order.items || []).reduce((sum: number, i: any) => sum + (Number(i.quantity) || 1), 0);
-      
+      const key =
+        String(order.customerPhone || order.customer_phone || '').trim().toLowerCase() ||
+        String(order.customerName || order.customer_name || '').trim().toLowerCase() ||
+        `__walkin_${order.id}`;
+      seenCustomers.add(key);
+
       const mode = order.paymentMode || order.payment_mode; // Handle schema variations
       if (mode === 'CASH') cash += Number(order.total) || 0;
       else if (mode === 'UPI') upi += Number(order.total) || 0;
@@ -79,6 +92,7 @@ export function DashboardView() {
       if (ot === 'DINEIN' || ot === 'DINE IN' || ot === 'DINE_IN') dineInSale += Number(order.total) || 0;
       else takeawaySale += Number(order.total) || 0;
     });
+    totalCustomers = seenCustomers.size;
 
     return { totalSale, totalCustomers, cash, upi, card, dineInSale, takeawaySale };
   }, [filteredOrders]);

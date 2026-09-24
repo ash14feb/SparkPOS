@@ -22,7 +22,12 @@ export function ReportsView() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [page, setPage] = useState(1);
 
-  useEffect(() => { fetchBootstrap(true); api.getExpenses().then(r => setExpenses(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!usePosStore.getState().bootstrapped) fetchBootstrap(true);
+    else usePosStore.getState().refreshInBackground();
+    api.getExpenses().then(r => setExpenses(r.data || [])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => { setPage(1); }, [tab, range]);
 
   const fOrders = useMemo(() => (orders || []).filter(o => inDateRange(o.timestamp, range.start, range.end, settings)), [orders, range, settings]);
