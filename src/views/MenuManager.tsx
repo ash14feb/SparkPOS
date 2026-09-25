@@ -26,7 +26,7 @@ export function MenuManager() {
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
   const [isBulkWorking, setIsBulkWorking] = useState(false);
 
-  const EMPTY_FORM: Partial<MenuItem> = { name: '', price: 0, category: '', image: '', barcode: '', stock: 0, mrp: null, unit: 'NONE', description: '', dietaryType: 'NONE', hsnSac: '', taxRate: 0, purchasePrice: null, wholesalePrice: null, minWholesaleQty: null, portionSize: '', stockInDate: '', lowStockAlert: null, variants: [] };
+  const EMPTY_FORM: Partial<MenuItem> = { name: '', price: 0, category: '', image: '', barcode: '', stock: 0, mrp: null, unit: 'NONE', description: '', dietaryType: 'NONE', hsnSac: '', taxRate: 0, purchasePrice: null, wholesalePrice: null, minWholesaleQty: null, portionSize: '', stockInDate: '', lowStockAlert: null, variants: [], isAvailable: true, spiceLevel: 0 };
   const [formData, setFormData] = useState<Partial<MenuItem>>(EMPTY_FORM);
   const UNITS = ['NONE','BAG','BOX','BTL','BUC','CARATS','CARTONS','DOZENS','GMS','KG','KW'];
   const UNIT_LABELS: Record<string,string> = { NONE: 'None', BAG: 'BAG (Bags)', BOX: 'BOX', BTL: 'BTL (Bottle)', BUC: 'BUC (Buckets)', CARATS: 'Carats', CARTONS: 'Cartons', DOZENS: 'Dozens', GMS: 'Gms', KG: 'Kg', KW: 'kW' };
@@ -299,6 +299,25 @@ export function MenuManager() {
                   ))}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Availability</label>
+                <div className="flex gap-2">
+                  {[{ v: true, icon: '✅', label: 'Available' }, { v: false, icon: '🚫', label: 'Out of Stock' }].map(o => {
+                    const on = (formData.isAvailable !== false) === o.v;
+                    return (
+                      <button key={String(o.v)} type="button" onClick={() => set({ isAvailable: o.v })} title={o.label} className={cn('flex-1 px-2 py-2 border rounded-lg text-sm font-medium', on ? (o.v ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700') : 'border-gray-300 text-gray-600')}>{o.icon} {o.label}</button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Spice Level 🌶️</label>
+                <div className="flex gap-2">
+                  {[{ v: 0, icon: '—', label: 'None' }, { v: 1, icon: '🌶️', label: 'Mild' }, { v: 2, icon: '🌶️🌶️', label: 'Medium' }, { v: 3, icon: '🌶️🌶️🌶️', label: 'Hot' }].map(o => (
+                    <button key={o.v} type="button" onClick={() => set({ spiceLevel: o.v })} title={o.label} className={cn('flex-1 px-2 py-2 border rounded-lg text-sm font-medium', (formData.spiceLevel || 0) === o.v ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-300 text-gray-600')}>{o.icon} {o.label}</button>
+                  ))}
+                </div>
+              </div>
               {settings.enableBarcode && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Barcode</label>
@@ -486,7 +505,7 @@ export function MenuManager() {
           </div>
           <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4">
             {sec.items.map((item) => {
-          const isOutOfStock = settings.enableStock && !settings.allowSaleWhenOutOfStock && (item.stock || 0) <= 0;
+          const isOutOfStock = item.isAvailable === false || (settings.enableStock && !settings.allowSaleWhenOutOfStock && (item.stock || 0) <= 0);
           
           return (
             <div 

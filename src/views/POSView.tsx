@@ -242,7 +242,7 @@ export function POSView() {
   }, [cart, discount, settings]);
 
   const handleAddToCart = (item: MenuItem, qty: number = 1) => {
-    if (settings?.enableStock && !settings?.allowSaleWhenOutOfStock && (item.stock || 0) <= 0) {
+    if (item.isAvailable === false || (settings?.enableStock && !settings?.allowSaleWhenOutOfStock && (item.stock || 0) <= 0)) {
       return toast.error(`${item.name} is out of stock`);
     }
     const existing = cart.find(c => c.id === item.id);
@@ -971,7 +971,7 @@ export function POSView() {
               </div>
             ) : (
               filteredItems.map(item => {
-                const outOfStock = settings?.enableStock && !settings?.allowSaleWhenOutOfStock && (item.stock || 0) <= 0;
+                const outOfStock = item.isAvailable === false || (settings?.enableStock && !settings?.allowSaleWhenOutOfStock && (item.stock || 0) <= 0);
                 const cartItem = cart.find(c => c.id === item.id);
                 const displayName = item.name ? item.name.charAt(0).toUpperCase() + item.name.slice(1) : item.name;
                 const dec = (cartId: string, qty: number) => {

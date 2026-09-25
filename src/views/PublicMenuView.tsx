@@ -45,6 +45,23 @@ interface CartLine {
   qty: number;
 }
 
+// Spice level helpers (set per item in Menu > Items).
+export function spiceEmoji(level: number): string {
+  const l = Number(level) || 0;
+  if (l >= 3) return '🌶️🌶️🌶️';
+  if (l === 2) return '🌶️🌶️';
+  if (l === 1) return '🌶️';
+  return '';
+}
+
+export function spiceLabel(level: number): string {
+  const l = Number(level) || 0;
+  if (l >= 3) return 'Extra hot';
+  if (l === 2) return 'Medium spicy';
+  if (l === 1) return 'Mild spicy';
+  return '';
+}
+
 // Interactive Golden Stars Component
 function StarRating({
   value,
@@ -409,7 +426,8 @@ export function PublicMenuView() {
     const matchesSearch =
       !query ||
       item.name.toLowerCase().includes(query) ||
-      (item.category && item.category.toLowerCase().includes(query));
+      (item.category && item.category.toLowerCase().includes(query)) ||
+      (item.description && item.description.toLowerCase().includes(query));
     return matchesCategory && matchesSearch;
   });
 
@@ -426,6 +444,145 @@ export function PublicMenuView() {
     sections.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
     return sections;
   })();
+
+  // Today's Recommended: join picks with live menu items for full info.
+  const recommendedPicks: any[] = (() => {
+    const recs: any[] = (data as any).recommended || [];
+    if (!recs.length) return [];
+    const byId = new Map(menuItems.map((m: any) => [String(m.id), m]));
+    return recs
+      .map((r: any) => {
+        const m = byId.get(String(r.productId ?? r.product_id));
+        if (!m) return null;
+        const delta = Number(r.priceDelta ?? r.price_delta) || 0;
+        return { ...m, recPrice: Number(m.price || 0) + delta, recDelta: delta };
+      })
+      .filter(Boolean);
+  })();
+
+  // Shared dish card: description, spice emojis, out-of-stock grey-out.
+  // Pass priceOverride for recommended picks (base + delta).
+  const renderDishCard = (item: any, priceOverride?: number) => {
+    const available = item.isAvailable !== false;
+    const effPrice = priceOverride !== undefined ? priceOverride : Number(item.price || 0);
+    const cartId = priceOverride !== undefined ? `rec-${item.id}` : String(item.id);
+    const line = cart.find((c) => String(c.id) === cartId);
+    const alreadyOrderedQty = activeOrder?.items?.find((ai: any) => ai.name === item.name)?.qty;
+    const spice = spiceEmoji(Number(item.spiceLevel || 0));
+    const spiceTitle = spiceLabel(Number(item.spiceLevel || 0));
+
+    return (
+      <div
+        key={priceOverride !== undefined ? `rec-${item.id}` : item.id}
+        className={cn(
+          'bg-white rounded-2xl p-3.5 border transition-all duration-200 flex gap-3.5 items-center relative overflow-hidden group',
+          !available && 'opacity-60 grayscale',
+          line
+            ? 'border-amber-400/80 shadow-md bg-amber-50/20'
+            : 'border-stone-200/80 shadow-xs hover:border-stone-300 hover:shadow-sm'
+        )}
+      >
+        {/* Dish Thumbnail / Avatar */}
+        <div className="w-20 h-20 bg-stone-100 rounded-xl shrink-0 overflow-hidden relative border border-stone-100">
+          {item.image ? (
+            <img
+              src={item.image}
+              alt={item.name}
+              loading="lazy"
+              className={cn('w-full h-full object-cover group-hover:scale-105 transition-transform duration-300', !available && 'grayscale')}
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-stone-100 text-stone-400">
+              <span className="font-display font-bold text-xl text-amber-800/60">
+                {item.name.charAt(0)}
+              </span>
+            </div>
+          )}
+          <div className="absolute top-1.5 left-1.5">
+            <DietIndicator name={item.name} category={item.category} />
+          </div>
+          {!available && (
+            <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 text-white text-[9px] font-bold text-center py-0.5 uppercase tracking-wide">
+              Out of Stock
+            </div>
+          )}
+        </div>
+
+        {/* Details & Price */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch py-0.5">
+          <div>
+            <h4 className="font-display font-bold text-slate-900 text-sm leading-snug truncate">
+              {item.name}
+              {spice ? (
+                <span className="ml-1.5 text-xs" title={spiceTitle} role="img" aria-label={spiceTitle}>
+                  {spice}
+                </span>
+              ) : null}
+            </h4>
+            {item.description ? (
+              <p className="text-[11px] text-stone-500 leading-snug mt-0.5 line-clamp-2">{item.description}</p>
+            ) : alreadyOrderedQty ? (
+              <span className="inline-block text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded mt-0.5">
+                Ordered ×{alreadyOrderedQty} at table
+              </span>
+            ) : item.category ? (
+              <span className="text-[11px] text-stone-400 truncate block mt-0.5">
+                {item.category}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <div className="font-display font-bold text-slate-900 text-base">
+              <span className="text-xs text-stone-500 mr-0.5">{currencySymbol || 'Rs.'}</span>
+              {effPrice.toFixed(0)}
+              {priceOverride !== undefined && Number(item.recDelta || 0) !== 0 && (
+                <span className="ml-1.5 text-[11px] font-medium text-stone-400 line-through">
+                  {currencySymbol || 'Rs.'}{Number(item.price || 0).toFixed(0)}
+                </span>
+              )}
+            </div>
+
+            {!available ? (
+              <span className="px-3 py-1.5 rounded-lg bg-stone-200 text-stone-500 font-display font-bold text-xs">
+                Unavailable
+              </span>
+            ) : !line ? (
+              <button
+                type="button"
+                onClick={() => addToCart({ ...item, id: cartId, price: effPrice })}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-display font-bold text-xs shadow-xs hover:shadow-sm transition-all flex items-center gap-1 active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" /> Add
+              </button>
+            ) : (
+              <div className="flex items-center bg-slate-900 text-white rounded-lg p-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => changeQty(line.id, -1)}
+                  className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
+                  aria-label="Decrease quantity"
+                >
+                  {line.qty === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3" />}
+                </button>
+                <span className="font-bold text-xs w-6 text-center text-amber-300 font-mono">
+                  {line.qty}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeQty(line.id, 1)}
+                  className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const sentiment = getRatingSentiment(overallRating);
   const upiPayAmount = Number(activeOrder?.total ?? 0).toFixed(2);
@@ -931,6 +1088,34 @@ export function PublicMenuView() {
           </div>
         </div>
 
+        {/* Today's Recommended — featured on top with adjusted prices */}
+        {recommendedPicks.length > 0 && (
+          <section className="space-y-3 rounded-3xl border border-amber-300/70 bg-gradient-to-b from-amber-50 to-white p-3.5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⭐</span>
+              <h3 className="font-display font-bold text-sm uppercase tracking-wider text-amber-800">
+                Today's Recommended
+              </h3>
+              <span className="text-[11px] font-bold text-amber-700 bg-amber-200/70 px-2 py-0.5 rounded-full">
+                {recommendedPicks.length}
+              </span>
+              <div className="flex-1 h-px bg-amber-200" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {recommendedPicks.map((item: any) => (
+                <div key={`rec-wrap-${item.id}`} className="relative">
+                  {Number(item.recDelta || 0) < 0 && (
+                    <span className="absolute -top-2 right-3 z-10 text-[10px] font-black uppercase tracking-wide bg-emerald-500 text-white px-2 py-0.5 rounded-full shadow">
+                      Deal −{currencySymbol || 'Rs.'}{Math.abs(Number(item.recDelta)).toFixed(0)}
+                    </span>
+                  )}
+                  {renderDishCard(item, Number(item.recPrice ?? item.price ?? 0))}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Dish List by Category */}
         <div className="space-y-6 pt-2">
           {grouped.map((sec) => (
@@ -946,100 +1131,7 @@ export function PublicMenuView() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {sec.items.map((item: any) => {
-                  const line = cart.find((c) => String(c.id) === String(item.id));
-                  const alreadyOrderedQty = activeOrder?.items?.find((ai: any) => ai.name === item.name)?.qty;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        'bg-white rounded-2xl p-3.5 border transition-all duration-200 flex gap-3.5 items-center relative overflow-hidden group',
-                        line
-                          ? 'border-amber-400/80 shadow-md bg-amber-50/20'
-                          : 'border-stone-200/80 shadow-xs hover:border-stone-300 hover:shadow-sm'
-                      )}
-                    >
-                      {/* Dish Thumbnail / Avatar */}
-                      <div className="w-20 h-20 bg-stone-100 rounded-xl shrink-0 overflow-hidden relative border border-stone-100">
-                        {item.image ? (
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            loading="lazy"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-stone-100 text-stone-400">
-                            <span className="font-display font-bold text-xl text-amber-800/60">
-                              {item.name.charAt(0)}
-                            </span>
-                          </div>
-                        )}
-                        <div className="absolute top-1.5 left-1.5">
-                          <DietIndicator name={item.name} category={item.category} />
-                        </div>
-                      </div>
-
-                      {/* Details & Price */}
-                      <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch py-0.5">
-                        <div>
-                          <h4 className="font-display font-bold text-slate-900 text-sm leading-snug truncate">
-                            {item.name}
-                          </h4>
-                          {alreadyOrderedQty ? (
-                            <span className="inline-block text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded mt-0.5">
-                              Ordered ×{alreadyOrderedQty} at table
-                            </span>
-                          ) : item.category ? (
-                            <span className="text-[11px] text-stone-400 truncate block mt-0.5">
-                              {item.category}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 mt-2">
-                          <div className="font-display font-bold text-slate-900 text-base">
-                            <span className="text-xs text-stone-500 mr-0.5">{currencySymbol || 'Rs.'}</span>
-                            {Number(item.price || 0).toFixed(0)}
-                          </div>
-
-                          {!line ? (
-                            <button
-                              type="button"
-                              onClick={() => addToCart(item)}
-                              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-display font-bold text-xs shadow-xs hover:shadow-sm transition-all flex items-center gap-1 active:scale-95"
-                            >
-                              <Plus className="w-3.5 h-3.5 stroke-[2.5]" /> Add
-                            </button>
-                          ) : (
-                            <div className="flex items-center bg-slate-900 text-white rounded-lg p-0.5 shadow-sm">
-                              <button
-                                type="button"
-                                onClick={() => changeQty(line.id, -1)}
-                                className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
-                                aria-label="Decrease quantity"
-                              >
-                                {line.qty === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3" />}
-                              </button>
-                              <span className="font-bold text-xs w-6 text-center text-amber-300 font-mono">
-                                {line.qty}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => changeQty(line.id, 1)}
-                                className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
-                                aria-label="Increase quantity"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {sec.items.map((item: any) => renderDishCard(item))}
               </div>
             </section>
           ))}

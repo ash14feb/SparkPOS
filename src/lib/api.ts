@@ -76,6 +76,9 @@ export const api = {
   updateMenuItem: (id: string | number, data: any) => request(`/api/pos/menu-items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteMenuItem: (id: string | number) => request(`/api/pos/menu-items/${id}`, { method: 'DELETE' }),
   getCategories: () => request('/api/pos/categories'),
+  getRecommended: () => request('/api/pos/recommended'),
+  saveRecommended: (items: { product_id: string | number; price_delta: number; sort_order: number }[]) =>
+    request('/api/pos/recommended', { method: 'PUT', body: JSON.stringify({ items }) }),
   
   // Categories
   createCategory: (data: any) => request('/api/pos/categories', { method: 'POST', body: JSON.stringify(data) }),

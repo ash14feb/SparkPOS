@@ -10,6 +10,19 @@ export interface MenuVariant {
   sortOrder?: number;
 }
 
+export interface RecommendedPick {
+  productId: string;
+  name: string;
+  basePrice: number;
+  priceDelta: number;
+  finalPrice: number;
+  image?: string;
+  category?: string;
+  description?: string;
+  spiceLevel?: number;
+  isAvailable?: boolean;
+}
+
 export interface MenuItem {
   id: number;
   name: string;
@@ -17,6 +30,8 @@ export interface MenuItem {
   image?: string;
   category: string;
   barcode?: string;
+  isAvailable?: boolean;
+  spiceLevel?: number;
   stock?: number;
   mrp?: number | null;
   unit?: string;
@@ -43,6 +58,7 @@ interface PosState {
   menuItems: MenuItem[];
   categories: any[];
   orders: any[];
+  recommended: RecommendedPick[];
   cart: CartItem[];
   settings: any;
   isLoading: boolean;
@@ -60,6 +76,7 @@ export const usePosStore = create<PosState>((set, get) => ({
   menuItems: [],
   categories: [],
   orders: [],
+  recommended: [],
   cart: [],
   settings: {},
   isLoading: false,
@@ -76,10 +93,11 @@ export const usePosStore = create<PosState>((set, get) => ({
       // The API returns a nested data object: { success: true, data: { settings, menuItems, ... } }
       const data = response.data || response; 
       
-      set({ 
-        menuItems: data.menuItems || [], 
+      set({
+        menuItems: data.menuItems || [],
         categories: data.categories || [],
         orders: data.orders || [],
+        recommended: data.recommended || [],
         settings: data.settings || {},
         isLoading: false,
         bootstrapped: true,
@@ -102,6 +120,7 @@ export const usePosStore = create<PosState>((set, get) => ({
         menuItems: data.menuItems || [],
         categories: data.categories || [],
         orders: data.orders || [],
+        recommended: data.recommended ?? get().recommended,
         settings: data.settings || {},
         bootstrapped: true,
       });

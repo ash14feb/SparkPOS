@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Package, FolderTree, LayoutGrid } from 'lucide-react';
+import { Package, FolderTree, LayoutGrid, Star } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { MenuManager } from './MenuManager';
 import { CategoriesManager } from './CategoriesManager';
+import { RecommendedManager } from './RecommendedManager';
 import { usePosStore } from '../store/usePosStore';
 
 export function InventoryView() {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'categories'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'categories' | 'recommended'>('inventory');
   const { menuItems, fetchBootstrap } = usePosStore();
 
   // Load items on direct visit/refresh (POS is not the only entry point)
@@ -42,19 +43,31 @@ export function InventoryView() {
             onClick={() => setActiveTab('categories')}
             className={cn(
               "flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200",
-              activeTab === 'categories' 
-                ? "bg-white text-gray-900 shadow-sm" 
+              activeTab === 'categories'
+                ? "bg-white text-gray-900 shadow-sm"
                 : "text-gray-500 hover:text-gray-700"
             )}
           >
             <FolderTree className="w-4 h-4 mr-2" />
             Categories
           </button>
+          <button
+            onClick={() => setActiveTab('recommended')}
+            className={cn(
+              "flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all duration-200",
+              activeTab === 'recommended'
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            <Star className="w-4 h-4 mr-2" />
+            Today's Recommended
+          </button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 custom-scrollbar no-chain-scroll">
-        {activeTab === 'inventory' ? <MenuManager /> : <CategoriesManager />}
+        {activeTab === 'inventory' ? <MenuManager /> : activeTab === 'categories' ? <CategoriesManager /> : <RecommendedManager />}
       </div>
     </div>
   );
