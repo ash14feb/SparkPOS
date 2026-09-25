@@ -158,6 +158,9 @@ export function PublicMenuView() {
   const [isPlacing, setIsPlacing] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
 
+  // Full-screen dish detail (tap a card to open)
+  const [selectedDish, setSelectedDish] = useState<{ item: any; priceOverride?: number } | null>(null);
+
   // Accordion for receipt / live items
   const [showOrderItems, setShowOrderItems] = useState(true);
   const [copiedUpi, setCopiedUpi] = useState(false);
@@ -482,8 +485,11 @@ export function PublicMenuView() {
             : 'border-stone-200/80 shadow-xs hover:border-stone-300 hover:shadow-sm'
         )}
       >
-        {/* Dish Thumbnail / Avatar */}
-        <div className="w-20 h-20 bg-stone-100 rounded-xl shrink-0 overflow-hidden relative border border-stone-100">
+        {/* Dish Thumbnail / Avatar (tap for full-screen detail) */}
+        <div
+          onClick={() => setSelectedDish({ item, priceOverride })}
+          className="w-20 h-20 bg-stone-100 rounded-xl shrink-0 overflow-hidden relative border border-stone-100 cursor-pointer"
+        >
           {item.image ? (
             <img
               src={item.image}
@@ -508,9 +514,9 @@ export function PublicMenuView() {
           )}
         </div>
 
-        {/* Details & Price */}
+        {/* Details & Price (tap name/desc for full-screen detail) */}
         <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch py-0.5">
-          <div>
+          <div onClick={() => setSelectedDish({ item, priceOverride })} className="cursor-pointer">
             <h4 className="font-display font-bold text-slate-900 text-sm leading-snug truncate">
               {item.name}
               {spice ? (
@@ -532,7 +538,7 @@ export function PublicMenuView() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between gap-2 mt-2">
+          <div className="flex items-center justify-between gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
             <div className="font-display font-bold text-slate-900 text-base">
               <span className="text-xs text-stone-500 mr-0.5">{currencySymbol || 'Rs.'}</span>
               {effPrice.toFixed(0)}
@@ -1389,6 +1395,129 @@ export function PublicMenuView() {
         <p className="font-medium text-stone-500">{restaurantName || 'Intelli Dining'}</p>
         <p>Digital Table Concierge & Contactless Ordering</p>
       </footer>
+
+      {/* Full-screen dish detail (tap a card to open, back to return) */}
+      {selectedDish && (() => {
+        const { item, priceOverride } = selectedDish;
+        const available = item.isAvailable !== false;
+        const effPrice = priceOverride !== undefined ? priceOverride : Number(item.price || 0);
+        const cartId = priceOverride !== undefined ? `rec-${item.id}` : String(item.id);
+        const line = cart.find((c) => String(c.id) === cartId);
+        const spice = spiceEmoji(Number(item.spiceLevel || 0));
+        const spiceTitle = spiceLabel(Number(item.spiceLevel || 0));
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col bg-[#faf8f5] animate-in fade-in duration-200">
+            <div className="relative shrink-0">
+              {item.image ? (
+                <img src={item.image} alt={item.name} className={cn('w-full h-72 sm:h-80 object-cover', !available && 'grayscale')} />
+              ) : (
+                <div className="w-full h-72 sm:h-80 flex items-center justify-center bg-gradient-to-br from-amber-100 to-stone-200">
+                  <span className="font-display font-bold text-7xl text-amber-800/50">{item.name.charAt(0)}</span>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/50 to-transparent" />
+              <button
+                type="button"
+                onClick={() => setSelectedDish(null)}
+                className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/95 text-slate-900 text-sm font-bold shadow-lg active:scale-95 transition-transform"
+                aria-label="Back to menu"
+              >
+                <X className="w-4 h-4" /> Back
+              </button>
+              <div className="absolute top-4 right-4">
+                <DietIndicator name={item.name} category={item.category} />
+              </div>
+              {!available && (
+                <span className="absolute bottom-3 left-4 text-[11px] font-black uppercase tracking-wide bg-red-600 text-white px-3 py-1 rounded-full shadow">
+                  Out of Stock
+                </span>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5 max-w-2xl w-full mx-auto">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">{item.category || 'Specialties'}</p>
+              <h2 className="font-display font-bold text-2xl text-slate-900 mt-1 leading-tight">
+                {item.name}
+                {spice ? (
+                  <span className="ml-2 text-lg" title={spiceTitle} role="img" aria-label={spiceTitle}>{spice}</span>
+                ) : null}
+              </h2>
+              {spiceTitle ? (
+                <p className="text-xs font-medium text-orange-600 mt-1">Spice level: {spiceTitle} {spice}</p>
+              ) : null}
+              {priceOverride !== undefined && Number(item.recDelta || 0) < 0 ? (
+                <span className="inline-block mt-2 text-[11px] font-black uppercase tracking-wide bg-emerald-500 text-white px-2.5 py-1 rounded-full">
+                  ⭐ Today's Deal −{currencySymbol || 'Rs.'}{Math.abs(Number(item.recDelta)).toFixed(0)}
+                </span>
+              ) : null}
+              {item.description ? (
+                <p className="text-sm text-stone-600 leading-relaxed mt-3">{item.description}</p>
+              ) : (
+                <p className="text-sm text-stone-400 italic mt-3">No description available for this dish.</p>
+              )}
+
+              <div className="flex items-center gap-2 mt-5">
+                <div className="font-display font-bold text-slate-900 text-3xl">
+                  <span className="text-base text-stone-500 mr-1">{currencySymbol || 'Rs.'}</span>
+                  {effPrice.toFixed(0)}
+                </div>
+                {priceOverride !== undefined && Number(item.recDelta || 0) !== 0 && (
+                  <span className="text-sm font-medium text-stone-400 line-through">
+                    {currencySymbol || 'Rs.'}{Number(item.price || 0).toFixed(0)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-white border-t border-stone-200 pb-safe shrink-0">
+              <div className="max-w-2xl mx-auto">
+                {!available ? (
+                  <div className="w-full py-4 bg-stone-200 text-stone-500 rounded-2xl font-bold text-center">
+                    Currently Unavailable
+                  </div>
+                ) : !line ? (
+                  <button
+                    type="button"
+                    onClick={() => addToCart({ ...item, id: cartId, price: effPrice })}
+                    className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-2xl font-display font-bold text-base shadow-lg flex items-center justify-center gap-2 active:scale-[0.99] transition-all"
+                  >
+                    <Plus className="w-5 h-5 stroke-[2.5]" /> Add to Order · {currencySymbol || 'Rs.'}{effPrice.toFixed(0)}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 flex items-center justify-center bg-slate-900 text-white rounded-2xl p-2">
+                      <button
+                        type="button"
+                        onClick={() => changeQty(line.id, -1)}
+                        className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-white/20 transition-colors"
+                        aria-label="Decrease quantity"
+                      >
+                        {line.qty === 1 ? <Trash2 className="w-5 h-5 text-red-400" /> : <Minus className="w-5 h-5" />}
+                      </button>
+                      <span className="font-bold text-lg w-12 text-center text-amber-300 font-mono">{line.qty}</span>
+                      <button
+                        type="button"
+                        onClick={() => changeQty(line.id, 1)}
+                        className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-white/20 transition-colors"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDish(null)}
+                      className="px-5 py-4 bg-amber-500 text-slate-950 rounded-2xl font-bold text-sm active:scale-95 transition-transform"
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

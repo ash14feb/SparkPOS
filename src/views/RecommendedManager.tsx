@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Star, Search, Save, Loader2, Plus, Minus, Trash2 } from 'lucide-react';
 import { usePosStore } from '../store/usePosStore';
 import { api } from '../lib/api';
@@ -17,17 +17,55 @@ export function RecommendedManager() {
   const [search, setSearch] = useState('');
   const [picks, setPicks] = useState<Pick[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
+  const [needsMigration, setNeedsMigration] = useState(false);
+  const lastSavedRef = useRef<string>('[]');
+  const saveTimer = useRef<number | null>(null);
   const currency = settings?.currencySymbol || 'Rs.';
 
   // Seed from server on load / after save.
   useEffect(() => {
-    setPicks((recommended || []).map((r) => ({ productId: String(r.productId), delta: Number(r.priceDelta) || 0 })));
+    const fromServer = (recommended || []).map((r) => ({ productId: String(r.productId), delta: Number(r.priceDelta) || 0 }));
+    setPicks(fromServer);
+    lastSavedRef.current = JSON.stringify(fromServer);
+    setSaveStatus('saved');
   }, [recommended]);
 
   useEffect(() => {
     if ((recommended || []).length === 0) fetchBootstrap(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-save (debounced): every star toggle / price tweak persists by
+  // itself — no manual Save needed, stars survive refresh.
+  useEffect(() => {
+    const key = JSON.stringify(picks);
+    if (key === lastSavedRef.current) return;
+    setSaveStatus('unsaved');
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        setSaveStatus('saving');
+        const payload = picks.map((p, i) => ({ product_id: p.productId, price_delta: Number(p.delta) || 0, sort_order: i }));
+        await api.saveRecommended(payload);
+        lastSavedRef.current = JSON.stringify(picks);
+        setSaveStatus('saved');
+        setNeedsMigration(false);
+      } catch (e: any) {
+        const msg = e?.message || 'Failed to save recommended items';
+        setSaveStatus('error');
+        if (msg.includes('Delta_014')) setNeedsMigration(true);
+        toast.error(msg);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 800);
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picks]);
 
   const pickMap = useMemo(() => new Map(picks.map((p) => [p.productId, p.delta])), [picks]);
 
@@ -48,15 +86,23 @@ export function RecommendedManager() {
     setPicks((prev) => prev.map((p) => (p.productId === key ? { ...p, delta } : p)));
   };
 
+  // Manual save (backup — auto-save above already persists every change).
   const handleSave = async () => {
     try {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
       setIsSaving(true);
       const payload = picks.map((p, i) => ({ product_id: p.productId, price_delta: Number(p.delta) || 0, sort_order: i }));
       await api.saveRecommended(payload);
+      lastSavedRef.current = JSON.stringify(picks);
+      setSaveStatus('saved');
+      setNeedsMigration(false);
       toast.success(payload.length ? `${payload.length} recommended item(s) live on public menu!` : 'Recommended list cleared');
       await fetchBootstrap(true);
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to save recommended items');
+      const msg = e?.message || 'Failed to save recommended items';
+      setSaveStatus('error');
+      if (msg.includes('Delta_014')) setNeedsMigration(true);
+      toast.error(msg);
     } finally {
       setIsSaving(false);
     }
@@ -65,9 +111,25 @@ export function RecommendedManager() {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-800">
-        <p className="font-bold mb-1">⭐ Today's Recommended</p>
-        <p>Tick items to feature them on top of the public menu. Adjust price with <b>+</b> (premium) or <b>−</b> (discount) — e.g. base Rs.100 with −10 shows Rs.90 as a deal.</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-bold">⭐ Today's Recommended</p>
+          <span className={cn(
+            'text-[11px] font-bold px-2 py-0.5 rounded-full',
+            saveStatus === 'saved' && 'bg-emerald-100 text-emerald-700',
+            (saveStatus === 'saving' || saveStatus === 'unsaved') && 'bg-amber-200 text-amber-800',
+            saveStatus === 'error' && 'bg-red-100 text-red-700'
+          )}>
+            {saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'saving' ? 'Saving…' : saveStatus === 'unsaved' ? 'Saving…' : '✗ Not saved'}
+          </span>
+        </div>
+        <p className="mt-1">Star items to feature them on top of the public menu — changes <b>save automatically</b>. Adjust price with <b>+</b> (premium) or <b>−</b> (discount) — e.g. base Rs.100 with −10 shows Rs.90 as a deal.</p>
       </div>
+      {needsMigration && (
+        <div className="bg-red-50 border border-red-300 rounded-xl p-4 mb-4 text-sm text-red-800">
+          <p className="font-bold mb-1">⚠️ Database update needed</p>
+          <p>Run <b>Database/Delta_014_Recommend_Spice_Availability.sql</b> once on the live database and redeploy the API — until then recommendations cannot be saved.</p>
+        </div>
+      )}
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
