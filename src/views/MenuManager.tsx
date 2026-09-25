@@ -25,6 +25,22 @@ export function MenuManager() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
   const [isBulkWorking, setIsBulkWorking] = useState(false);
+  const [togglingAvail, setTogglingAvail] = useState<number | null>(null);
+
+  // Quick availability switch on the card itself (no edit form needed).
+  const toggleAvailability = async (item: MenuItem) => {
+    const next = !(item.isAvailable !== false);
+    try {
+      setTogglingAvail(Number(item.id));
+      await api.updateMenuItem(item.id, { ...item, isAvailable: next });
+      toast.success(next ? `${item.name} is available` : `${item.name} marked out of stock`);
+      await fetchBootstrap(true);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update availability');
+    } finally {
+      setTogglingAvail(null);
+    }
+  };
 
   const EMPTY_FORM: Partial<MenuItem> = { name: '', price: 0, category: '', image: '', barcode: '', stock: 0, mrp: null, unit: 'NONE', description: '', dietaryType: 'NONE', hsnSac: '', taxRate: 0, purchasePrice: null, wholesalePrice: null, minWholesaleQty: null, portionSize: '', stockInDate: '', lowStockAlert: null, variants: [], isAvailable: true, spiceLevel: 0 };
   const [formData, setFormData] = useState<Partial<MenuItem>>(EMPTY_FORM);
@@ -551,12 +567,34 @@ export function MenuManager() {
                 )}
                 
                 {isOutOfStock && (
-                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] flex items-center justify-center">
+                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
                     <span className="bg-red-600 text-white px-3 py-1 text-xs font-bold rounded-full shadow-sm">
                       OUT OF STOCK
                     </span>
                   </div>
                 )}
+                {/* Quick availability switch (always visible, bottom-left of thumbnail) */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleAvailability(item); }}
+                  disabled={togglingAvail === Number(item.id)}
+                  title={item.isAvailable !== false ? 'Mark out of stock' : 'Mark available'}
+                  className={cn(
+                    'absolute bottom-2 left-2 z-10 flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full shadow-md border text-[10px] font-bold transition-colors',
+                    item.isAvailable !== false
+                      ? 'bg-emerald-500 border-emerald-600 text-white'
+                      : 'bg-slate-700 border-slate-800 text-white',
+                    togglingAvail === Number(item.id) && 'opacity-70'
+                  )}
+                >
+                  {togglingAvail === Number(item.id) ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <span className={cn('w-5 h-3.5 rounded-full p-0.5 flex transition-colors', item.isAvailable !== false ? 'bg-emerald-200 justify-end' : 'bg-slate-500 justify-start')}>
+                      <span className="w-2.5 h-2.5 rounded-full bg-white shadow" />
+                    </span>
+                  )}
+                  {item.isAvailable !== false ? 'In Stock' : 'Out'}
+                </button>
               </div>
               
               <div className="p-3 flex-1 flex flex-col">
