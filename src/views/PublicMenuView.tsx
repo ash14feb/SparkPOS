@@ -204,6 +204,19 @@ export function PublicMenuView() {
 
   const pollRef = useRef<number | null>(null);
 
+  // Online-table detection WITHOUT depending on post-load consts, so this
+  // effect can live above the loading early-returns (hooks must run on
+  // every render — React error #310 otherwise).
+  const dataIsOnline =
+    (data as any)?.isOnlineTable === true ||
+    String((data as any)?.table?.table_no || '').trim().toUpperCase() === 'ONLINETABLE';
+
+  // Online mode: ask for GPS as soon as the checkout sheet opens.
+  useEffect(() => {
+    if (showCart && dataIsOnline && gpsState === 'idle' && !coords) requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCart, dataIsOnline]);
+
   useEffect(() => {
     if (code) {
       fetchMenu();
@@ -495,18 +508,8 @@ export function PublicMenuView() {
   const { table, restaurantName, currencySymbol, menuItems, activeOrder } = data;
   // Online ordering mode: shared ONLINETABLE QR — no table name anywhere,
   // GPS + delivery address required before ordering.
-  const isOnline =
-    (data as any).isOnlineTable === true ||
-    String(table?.table_no || '').trim().toUpperCase() === 'ONLINETABLE';
+  const isOnline = dataIsOnline;
   const tableStatus = String((data as any).tableStatus || table?.status || '').toUpperCase();
-
-  // Online mode: ask for GPS as soon as the checkout sheet opens.
-  // (Placed here — after isOnline is declared — because effect dependency
-  // arrays evaluate during render and must not read later declarations.)
-  useEffect(() => {
-    if (showCart && isOnline && gpsState === 'idle' && !coords) requestLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCart, isOnline]);
   const hasLiveOrder = (tableStatus === 'CUSTOMER_ORDERED' || tableStatus === 'HAVING_FOOD') && !!activeOrder;
   const isHavingFood = tableStatus === 'HAVING_FOOD';
   const customerOrdered = tableStatus === 'CUSTOMER_ORDERED' || !!placedOrder;
