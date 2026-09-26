@@ -1,4 +1,5 @@
 import { QRCodeSVG } from 'qrcode.react';
+import { LocationPicker } from '../components/LocationPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -160,6 +161,7 @@ export function PublicMenuView() {
   const [landmark, setLandmark] = useState('');
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsState, setGpsState] = useState<'idle' | 'locating' | 'ok' | 'denied' | 'unsupported'>('idle');
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   const requestLocation = () => {
     if (!('geolocation' in navigator)) {
@@ -1499,6 +1501,18 @@ export function PublicMenuView() {
                         <>📍 Enable Location & Capture GPS</>
                       )}
                     </button>
+                    {gpsState === 'ok' && coords && (
+                      <div className="flex items-center justify-between gap-2 bg-white border border-stone-200 rounded-xl px-3 py-2">
+                        <span className="text-[11px] text-stone-600 font-mono">{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowMapPicker(true)}
+                          className="text-[11px] font-bold text-emerald-700 hover:underline shrink-0"
+                        >
+                          🗺️ Adjust on map
+                        </button>
+                      </div>
+                    )}
                     {gpsState === 'denied' && (
                       <p className="text-[11px] text-red-600 font-medium">GPS permission was denied. Please allow location access for this site in your browser settings, then tap again.</p>
                     )}
@@ -1635,6 +1649,20 @@ export function PublicMenuView() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Interactive delivery-location picker (pin starts at GPS fix) */}
+      {showMapPicker && coords && (
+        <LocationPicker
+          initial={coords}
+          onClose={() => setShowMapPicker(false)}
+          onConfirm={(c) => {
+            setCoords(c);
+            setGpsState('ok');
+            setShowMapPicker(false);
+            toast.success('Delivery location updated!');
+          }}
+        />
       )}
 
       {/* Subdued Footer */}
