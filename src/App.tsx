@@ -30,6 +30,7 @@ import { PublicMenuView } from './views/PublicMenuView';
 import { InventoryView } from './views/InventoryView';
 import { BillView } from './views/BillView';
 import { StaffView } from './views/StaffView';
+import { UpsellView } from './views/UpsellView';
 import { ProfileView } from './views/ProfileView';
 import { ReviewsView } from './views/ReviewsView';
 import { ReportsView } from './views/ReportsView';
@@ -102,6 +103,7 @@ export default function App() {
           <Route path="/reports" element={<RoleRoute><ReportsView /></RoleRoute>} />
           <Route path="/settings" element={<RoleRoute><SettingsView /></RoleRoute>} />
           <Route path="/staff" element={<RoleRoute><StaffView /></RoleRoute>} />
+          <Route path="/upsell" element={<RoleRoute><UpsellView /></RoleRoute>} />
           <Route path="/profile" element={<ProfileView />} />
           <Route path="/subscribe" element={<SubscribeView />} />
           <Route path="*" element={<Landing />} />

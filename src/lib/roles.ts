@@ -27,12 +27,16 @@ const KITCHEN_PATHS = new Set(['/kds', '/profile', '/subscribe']);
 // Paths restricted to admin / super_admin.
 const ADMIN_PATHS = new Set(['/settings', '/staff']);
 
+// AI Upselling Engine: owner + manager (kitchen/staff/captain excluded).
+const UPSELL_ROLES = new Set(['admin', 'super_admin', 'manager']);
+
 export function canAccessPath(roleInput: any, path: string): boolean {
   const role = normRole(roleInput);
   const clean = (path || '').split('?')[0].replace(/\/+$/, '') || '/';
   if (clean === '/profile' || clean === '/subscribe' || clean === '/login') return true;
   if (isAdminRole(role)) return true;
   if (ADMIN_PATHS.has(clean)) return false;
+  if (clean === '/upsell') return UPSELL_ROLES.has(role);
   if (role === 'kitchen') return KITCHEN_PATHS.has(clean);
   // manager, staff, captain: everything except admin-only paths
   return true;

@@ -130,6 +130,28 @@ export const api = {
       return res.json();
     }),
   
+  // AI Upselling Engine
+  getUpsellStats: () => request('/api/upsell/stats'),
+  generateUpsell: () => request('/api/upsell/generate', { method: 'POST' }),
+  regenerateUpsellItem: (source_item_id: string | number) =>
+    request('/api/upsell/regenerate-item', { method: 'POST', body: JSON.stringify({ source_item_id }) }),
+  getUpsells: (params?: { generation_id?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.generation_id) q.set('generation_id', params.generation_id);
+    if (params?.status) q.set('status', params.status);
+    const s = q.toString();
+    return request(`/api/upsell${s ? `?${s}` : ''}`);
+  },
+  updateUpsell: (id: number, data: { status?: string; priority?: number }) =>
+    request(`/api/upsell/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteUpsell: (id: number) => request(`/api/upsell/${id}`, { method: 'DELETE' }),
+  addUpsell: (data: { source_item_id: string | number; recommended_item_id: string | number; priority?: number; recommendation_type?: string; ai_reason?: string }) =>
+    request('/api/upsell/add', { method: 'POST', body: JSON.stringify(data) }),
+  approveAllUpsell: (generation_id: string) =>
+    request('/api/upsell/approve-all', { method: 'POST', body: JSON.stringify({ generation_id }) }),
+  rejectAllUpsell: (generation_id: string) =>
+    request('/api/upsell/reject-all', { method: 'POST', body: JSON.stringify({ generation_id }) }),
+
   // Subscription / trial
   getSubscriptionStatus: () => request('/api/subscription/status'),
   subscribe: (plan: '1YR' | '3YR') => request('/api/subscription/subscribe', { method: 'POST', body: JSON.stringify({ plan }) }),

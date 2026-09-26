@@ -243,7 +243,21 @@ export function PublicMenuView() {
     }
   };
 
+  // Upsell prompt: set when a newly-added item has approved AI pairings.
+  const [upsellPrompt, setUpsellPrompt] = useState<{ sourceId: string; sourceName: string; recs: any[] } | null>(null);
+
+  const upsellMap: Record<string, any[]> = (data as any)?.upsells || {};
+
+  // Recs for a menu id: approved only (server-side), minus items in cart/self.
+  const recsFor = (menuId: string | number, cartIds: Set<string>) => {
+    const base = String(menuId).replace(/^rec-/, '');
+    return (upsellMap[base] || upsellMap[String(menuId)] || []).filter(
+      (r: any) => !cartIds.has(String(r.id)) && String(r.id) !== base
+    ).slice(0, 6);
+  };
+
   const addToCart = (item: any) => {
+    const isNew = !cart.some((c) => String(c.id) === String(item.id));
     setCart((prev) => {
       const found = prev.find((c) => String(c.id) === String(item.id));
       if (found) {
@@ -262,7 +276,35 @@ export function PublicMenuView() {
       ];
     });
     toast.success(`Added ${item.name}`, { duration: 1500, position: 'bottom-center' });
+    // Lightweight upsell: only on first add, only if approved pairings exist
+    // that aren't already in the cart. Never blocks ordering.
+    if (isNew) {
+      const inCart = new Set(cart.map((c) => String(c.id).replace(/^rec-/, '')));
+      inCart.add(String(item.id).replace(/^rec-/, ''));
+      const recs = recsFor(item.id, inCart);
+      if (recs.length) {
+        setUpsellPrompt({ sourceId: String(item.id), sourceName: item.name, recs });
+      }
+    }
   };
+
+  // Combined upsells for the whole cart (cart sheet): dedup, exclude cart, max 6.
+  const cartUpsells: any[] = (() => {
+    if (!cart.length) return [];
+    const inCart = new Set(cart.map((c) => String(c.id).replace(/^rec-/, '')));
+    const out: any[] = [];
+    const seen = new Set<string>();
+    for (const c of cart) {
+      for (const r of recsFor(c.id, inCart)) {
+        if (!seen.has(String(r.id))) {
+          seen.add(String(r.id));
+          out.push(r);
+        }
+        if (out.length >= 6) return out;
+      }
+    }
+    return out;
+  })();
 
   const changeQty = (id: string, delta: number) => {
     setCart((prev) =>
@@ -1293,6 +1335,37 @@ export function PublicMenuView() {
                 ))}
               </div>
 
+              {/* ✨ You may also like (approved AI pairings for cart items) */}
+              {cartUpsells.length > 0 && (
+                <div className="bg-gradient-to-b from-amber-50 to-white p-3.5 rounded-2xl border border-amber-200/70">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800 pb-2">
+                    ✨ You may also like
+                  </p>
+                  <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-0.5 px-0.5">
+                    {cartUpsells.map((r: any) => (
+                      <div key={r.id} className="min-w-[128px] max-w-[128px] bg-white rounded-xl border border-stone-200/80 p-2 flex flex-col">
+                        {r.image ? (
+                          <img src={r.image} alt={r.name} loading="lazy" className="w-full h-16 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-full h-16 rounded-lg bg-amber-50 flex items-center justify-center font-display font-bold text-xl text-amber-800/60">
+                            {r.name.charAt(0)}
+                          </div>
+                        )}
+                        <p className="text-xs font-bold text-slate-900 truncate mt-1.5">{r.name}</p>
+                        <p className="text-[11px] text-stone-500">{currencySymbol || 'Rs.'}{Number(r.price).toFixed(0)}</p>
+                        <button
+                          type="button"
+                          onClick={() => addToCart({ id: r.id, name: r.name, price: Number(r.price) || 0, image: r.image || '', category: 'General' })}
+                          className="mt-1.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"
+                        >
+                          <Plus className="w-3 h-3 stroke-[2.5]" /> Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Guest Details Form */}
               <div className="bg-white p-4 rounded-2xl border border-stone-200/80 space-y-3">
                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-stone-700 pb-1 border-b border-stone-100">
@@ -1385,6 +1458,52 @@ export function PublicMenuView() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✨ Upsell prompt after adding an item (approved pairings only, dismissible) */}
+      {upsellPrompt && !showCart && (
+        <div className="fixed inset-x-0 bottom-0 z-40 p-4 pb-safe pointer-events-none">
+          <div className="max-w-md mx-auto bg-white rounded-2xl shadow-2xl border border-amber-200/80 overflow-hidden pointer-events-auto animate-in slide-in-from-bottom duration-250">
+            <div className="flex items-center justify-between px-4 pt-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                ✨ Goes well with {upsellPrompt.sourceName}
+              </p>
+              <button
+                type="button"
+                onClick={() => setUpsellPrompt(null)}
+                className="w-7 h-7 rounded-full bg-stone-100 text-stone-500 flex items-center justify-center"
+                aria-label="Dismiss suggestions"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto p-4 pt-2">
+              {upsellPrompt.recs.map((r: any) => (
+                <div key={r.id} className="min-w-[128px] max-w-[128px] bg-stone-50 rounded-xl border border-stone-200/70 p-2 flex flex-col">
+                  {r.image ? (
+                    <img src={r.image} alt={r.name} loading="lazy" className="w-full h-16 rounded-lg object-cover" />
+                  ) : (
+                    <div className="w-full h-16 rounded-lg bg-amber-50 flex items-center justify-center font-display font-bold text-xl text-amber-800/60">
+                      {r.name.charAt(0)}
+                    </div>
+                  )}
+                  <p className="text-xs font-bold text-slate-900 truncate mt-1.5">{r.name}</p>
+                  <p className="text-[11px] text-stone-500">{currencySymbol || 'Rs.'}{Number(r.price).toFixed(0)}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addToCart({ id: r.id, name: r.name, price: Number(r.price) || 0, image: r.image || '', category: 'General' });
+                      setUpsellPrompt(null);
+                    }}
+                    className="mt-1.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"
+                  >
+                    <Plus className="w-3 h-3 stroke-[2.5]" /> Add
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
