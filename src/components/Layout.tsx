@@ -20,7 +20,8 @@ import {
   ContactRound,
   Crown,
   Star,
-  Sparkles
+  Sparkles,
+  Globe
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
@@ -42,6 +43,7 @@ const navItems = [
   { icon: Users, label: 'Customers', path: '/customers' },
   { icon: Star, label: 'Customer Reviews', path: '/reviews' },
   { icon: Sparkles, label: 'AI Upselling', path: '/upsell' },
+  { icon: Globe, label: 'Online Ordering', path: '/online-orders' },
   { icon: CreditCard, label: 'Expenses', path: '/expenses' },
   { icon: BarChart3, label: 'Reports', path: '/reports' },
   { icon: ContactRound, label: 'Staff', path: '/staff' },

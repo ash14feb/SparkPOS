@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Armchair, Plus, Users, Clock, Loader2, Trash2, Link as LinkIcon, QrCode, ExternalLink, X, Check } from 'lucide-react';
+import { Armchair, Plus, Users, Clock, Loader2, Trash2, Link as LinkIcon, QrCode, ExternalLink, X, Check, Globe } from 'lucide-react';
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
@@ -52,6 +52,21 @@ export function TablesView() {
   const [newFloorSection, setNewFloorSection] = useState('');
   const [newCapacity, setNewCapacity] = useState(4);
   const [isAdding, setIsAdding] = useState(false);
+  const [isAddingOnline, setIsAddingOnline] = useState(false);
+
+  // Shared QR for delivery/online orders (reserved table_no ONLINETABLE).
+  const handleCreateOnlineTable = async () => {
+    try {
+      setIsAddingOnline(true);
+      await api.createTable({ table_no: 'ONLINETABLE', seats: 0 });
+      toast.success('Online Ordering Table created — share its QR for delivery orders!');
+      fetchTables();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create online table');
+    } finally {
+      setIsAddingOnline(false);
+    }
+  };
 
   // QR Modal State
   const [qrModalTable, setQrModalTable] = useState<Table | null>(null);
@@ -318,12 +333,24 @@ export function TablesView() {
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'settings' && (
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center justify-center px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
-            >
-              <Plus className="w-4 h-4 mr-2" /> Add Table
-            </button>
+            <>
+              {!tables.some((t: any) => String(t.table_no || '').trim().toUpperCase() === 'ONLINETABLE') && (
+                <button
+                  onClick={handleCreateOnlineTable}
+                  disabled={isAddingOnline}
+                  className="flex items-center justify-center px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-60"
+                  title="Creates the shared ONLINETABLE QR for delivery/online orders"
+                >
+                  {isAddingOnline ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Globe className="w-4 h-4 mr-2" />} Online Table
+                </button>
+              )}
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center justify-center px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add Table
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -155,6 +155,42 @@ export function PublicMenuView() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [kitchenNotes, setKitchenNotes] = useState('');
+  // Online delivery: GPS + address (ONLINETABLE only)
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsState, setGpsState] = useState<'idle' | 'locating' | 'ok' | 'denied' | 'unsupported'>('idle');
+
+  // Online mode: ask for GPS as soon as the checkout sheet opens.
+  useEffect(() => {
+    if (showCart && isOnline && gpsState === 'idle' && !coords) requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCart, isOnline]);
+
+  const requestLocation = () => {
+    if (!('geolocation' in navigator)) {
+      setGpsState('unsupported');
+      toast.error('GPS is not supported on this device/browser');
+      return;
+    }
+    setGpsState('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsState('ok');
+        toast.success('Location captured!');
+      },
+      (err) => {
+        setGpsState('denied');
+        toast.error(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied — please enable GPS for this site and try again'
+            : 'Could not get your location — please try again'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  };
   const [isPlacing, setIsPlacing] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
 
@@ -321,6 +357,11 @@ export function PublicMenuView() {
     if (!customerName.trim()) return toast.error('Please enter your name');
     if (!customerPhone.trim()) return toast.error('Please enter your phone number');
     if (cart.length === 0) return toast.error('Your order is empty');
+    // Online delivery: GPS + address are mandatory before ordering.
+    if (isOnline) {
+      if (!deliveryAddress.trim()) return toast.error('Please enter your delivery address');
+      if (!coords) return toast.error('Please tap “Enable Location & Capture GPS” first');
+    }
 
     try {
       setIsPlacing(true);
@@ -336,13 +377,25 @@ export function PublicMenuView() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         kitchenNotes: kitchenNotes.trim(),
+        ...(isOnline
+          ? {
+              customerAddress: deliveryAddress.trim(),
+              customerLandmark: landmark.trim(),
+              lat: coords?.lat,
+              lng: coords?.lng,
+            }
+          : {}),
       });
 
       setPlacedOrder(res.data);
       setCart([]);
       setKitchenNotes('');
       setShowCart(false);
-      toast.success(res.appended ? 'Extra dishes added to your table!' : 'Order sent to the kitchen! 👨‍🍳');
+      toast.success(
+        res.data?.isOnline || isOnline
+          ? 'Online order placed! 🛵 We’ll deliver it hot & fresh!'
+          : res.appended ? 'Extra dishes added to your table!' : 'Order sent to the kitchen! 👨‍🍳'
+      );
 
       // Refresh data so live order card updates smoothly
       await fetchMenu(true);
@@ -446,6 +499,11 @@ export function PublicMenuView() {
   }
 
   const { table, restaurantName, currencySymbol, menuItems, activeOrder } = data;
+  // Online ordering mode: shared ONLINETABLE QR — no table name anywhere,
+  // GPS + delivery address required before ordering.
+  const isOnline =
+    (data as any).isOnlineTable === true ||
+    String(table?.table_no || '').trim().toUpperCase() === 'ONLINETABLE';
   const tableStatus = String((data as any).tableStatus || table?.status || '').toUpperCase();
   const hasLiveOrder = (tableStatus === 'CUSTOMER_ORDERED' || tableStatus === 'HAVING_FOOD') && !!activeOrder;
   const isHavingFood = tableStatus === 'HAVING_FOOD';
@@ -651,13 +709,24 @@ export function PublicMenuView() {
                 <h1 className="text-lg font-display font-bold text-slate-900 tracking-tight truncate leading-tight">
                   {restaurantName || 'Artisan Dining'}
                 </h1>
-                {table && (
+                {table && !isOnline && (
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-stone-500">
                     <span className="inline-flex items-center font-semibold text-amber-800 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md">
                       <UtensilsCrossed className="w-3 h-3 mr-1 text-amber-600" />
                       Table {table.table_no}
                     </span>
                     {table.seats && <span>· {table.seats} Seats</span>}
+                    <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Live
+                    </span>
+                  </div>
+                )}
+                {isOnline && (
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-stone-500">
+                    <span className="inline-flex items-center font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-md">
+                      🛵 Online Ordering · Delivery
+                    </span>
                     <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Live
@@ -715,7 +784,7 @@ export function PublicMenuView() {
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Meal Served · Enjoy!
                 </span>
-                {table && (
+                {table && !isOnline && (
                   <span className="text-xs text-stone-300 font-medium bg-white/10 px-2.5 py-1 rounded-full">
                     Table {table.table_no}
                   </span>
@@ -837,7 +906,7 @@ export function PublicMenuView() {
                     Your Table Bill {isHavingFood ? '· Served' : '· In Kitchen'}
                   </h3>
                   <p className="text-xs text-stone-500">
-                    {activeOrder.items?.length || 0} item(s) · {activeOrder.orderCode ? `Order #${activeOrder.orderCode}` : `Table ${table?.table_no}`}
+                    {activeOrder.items?.length || 0} item(s) · {activeOrder.orderCode ? `Order #${activeOrder.orderCode}` : !isOnline ? `Table ${table?.table_no}` : 'Online Order'}
                   </p>
                 </div>
               </div>
@@ -1072,7 +1141,9 @@ export function PublicMenuView() {
               </h2>
               <p className="text-xs text-stone-500">
                 {customerOrdered || isHavingFood
-                  ? `Items added now will go straight to Table ${table?.table_no || ''}`
+                  ? isOnline
+                    ? 'Items added now will be ordered for delivery'
+                    : `Items added now will go straight to Table ${table?.table_no || ''}`
                   : 'Handcrafted dishes freshly made to order'}
               </p>
             </div>
@@ -1241,7 +1312,7 @@ export function PublicMenuView() {
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="font-medium text-stone-200">
-                  Table {table?.table_no} · {isHavingFood ? 'Meal Served' : 'Order in Kitchen'}
+                  {isOnline ? 'Online Order' : <>Table {table?.table_no}</>} · {isHavingFood ? 'Meal Served' : 'Order in Kitchen'}
                 </span>
               </div>
               <a
@@ -1276,7 +1347,7 @@ export function PublicMenuView() {
                 </div>
                 <div>
                   <h3 className="font-display font-bold text-slate-900 text-base">
-                    Review Order {table ? `· Table ${table.table_no}` : ''}
+                    Review Order {isOnline ? '· Delivery' : table ? `· Table ${table.table_no}` : ''}
                   </h3>
                   <p className="text-xs text-stone-500">
                     {cartCount} item(s) selected
@@ -1400,6 +1471,58 @@ export function PublicMenuView() {
                   </div>
                 </div>
 
+                {/* Online delivery: GPS + address (ONLINETABLE only) */}
+                {isOnline && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 space-y-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">🛵 Delivery Details</p>
+                    <button
+                      type="button"
+                      onClick={requestLocation}
+                      disabled={gpsState === 'locating'}
+                      className={cn(
+                        'w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all',
+                        gpsState === 'ok'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60'
+                      )}
+                    >
+                      {gpsState === 'locating' ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Locating you…</>
+                      ) : gpsState === 'ok' && coords ? (
+                        <><CheckCircle2 className="w-4 h-4" /> Location captured ✓</>
+                      ) : (
+                        <>📍 Enable Location & Capture GPS</>
+                      )}
+                    </button>
+                    {gpsState === 'denied' && (
+                      <p className="text-[11px] text-red-600 font-medium">GPS permission was denied. Please allow location access for this site in your browser settings, then tap again.</p>
+                    )}
+                    {gpsState === 'unsupported' && (
+                      <p className="text-[11px] text-red-600 font-medium">This device/browser does not support GPS location.</p>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-stone-600 mb-1">Delivery Address *</label>
+                      <textarea
+                        value={deliveryAddress}
+                        onChange={(e) => setDeliveryAddress(e.target.value.slice(0, 500))}
+                        placeholder="House / flat no, street, area, city…"
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-stone-600 mb-1">Landmark (optional)</label>
+                      <input
+                        type="text"
+                        value={landmark}
+                        onChange={(e) => setLandmark(e.target.value.slice(0, 255))}
+                        placeholder="e.g. Near City Mall gate 2"
+                        className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Kitchen Special Requests */}
                 <div>
                   <label className="flex items-center gap-1 text-xs font-medium text-stone-600 mb-1">
@@ -1450,7 +1573,7 @@ export function PublicMenuView() {
                   </>
                 ) : hasLiveOrder || customerOrdered ? (
                   <>
-                    <Plus className="w-4 h-4 text-amber-400" /> Add Extra Items to Table {table?.table_no}
+                    <Plus className="w-4 h-4 text-amber-400" /> {isOnline ? 'Add Extra Items for Delivery' : <>Add Extra Items to Table {table?.table_no}</>}
                   </>
                 ) : (
                   <>
