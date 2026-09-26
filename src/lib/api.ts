@@ -132,7 +132,8 @@ export const api = {
   
   // AI Upselling Engine
   getUpsellStats: () => request('/api/upsell/stats'),
-  generateUpsell: () => request('/api/upsell/generate', { method: 'POST' }),
+  generateUpsell: (source_item_ids?: (string | number)[]) =>
+    request('/api/upsell/generate', { method: 'POST', body: JSON.stringify(source_item_ids?.length ? { source_item_ids } : {}) }),
   regenerateUpsellItem: (source_item_id: string | number) =>
     request('/api/upsell/regenerate-item', { method: 'POST', body: JSON.stringify({ source_item_id }) }),
   getUpsells: (params?: { generation_id?: string; status?: string }) => {

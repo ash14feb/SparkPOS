@@ -47,6 +47,13 @@ export function UpsellView() {
   const [regenId, setRegenId] = useState<string | null>(null);
   const [addFor, setAddFor] = useState<string | null>(null);
   const [addItemId, setAddItemId] = useState('');
+  // Generate scope picker
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genSearch, setGenSearch] = useState('');
+  const [genSelected, setGenSelected] = useState<string[]>([]);
+  // Global manual add (any source -> any menu item)
+  const [manualSource, setManualSource] = useState('');
+  const [manualRec, setManualRec] = useState('');
   const currency = settings?.currencySymbol || 'Rs.';
 
   const load = async (status = statusFilter) => {
@@ -89,11 +96,20 @@ export function UpsellView() {
     return [...m.values()];
   }, [groups]);
 
+  // Opens the picker; owner selects which dishes to generate for.
+  const openGenerate = () => {
+    setGenSelected(menuItems.map((m: any) => String(m.id)));
+    setGenSearch('');
+    setShowGenModal(true);
+  };
+
   const handleGenerate = async () => {
-    if (!confirm('Generate AI recommendations for your menu? New results will be drafts — approved ones stay untouched.')) return;
+    if (!genSelected.length) return toast.error('Select at least one menu item');
     try {
+      setShowGenModal(false);
       setIsGenerating(true);
-      const res = await api.generateUpsell();
+      const all = genSelected.length === menuItems.length;
+      const res = await api.generateUpsell(all ? undefined : genSelected);
       toast.success(res.message || 'Recommendations generated as drafts!');
       setStatusFilter('DRAFT');
       await load('DRAFT');
@@ -102,6 +118,23 @@ export function UpsellView() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const genFiltered = menuItems.filter((m: any) => {
+    const q = genSearch.trim().toLowerCase();
+    return !q || m.name.toLowerCase().includes(q) || m.category?.toLowerCase().includes(q);
+  });
+
+  const handleManualAdd = async () => {
+    if (!manualSource) return toast.error('Pick the menu item (source dish)');
+    if (!manualRec) return toast.error('Pick the item to recommend');
+    if (manualSource === manualRec) return toast.error('Source and recommended items must differ');
+    await mutate(
+      () => api.addUpsell({ source_item_id: manualSource, recommended_item_id: manualRec }),
+      'Recommendation added as draft'
+    );
+    setManualSource('');
+    setManualRec('');
   };
 
   const mutate = async (fn: () => Promise<any>, okMsg: string) => {
@@ -161,7 +194,7 @@ export function UpsellView() {
             <p className="text-xs text-gray-500">Smart complementary recommendations — review and approve before customers see them.</p>
           </div>
           <button
-            onClick={handleGenerate}
+            onClick={openGenerate}
             disabled={isGenerating}
             className="flex items-center px-4 py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-bold rounded-xl hover:opacity-95 disabled:opacity-60 shadow-md shrink-0"
           >
@@ -187,6 +220,26 @@ export function UpsellView() {
                 <p className="text-lg font-display font-bold text-gray-900 mt-0.5 truncate">{s.value}</p>
               </div>
             ))}
+          </div>
+
+          {/* Manual add: any source dish -> any menu item (saved as draft) */}
+          <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">＋ Manually add a recommendation</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select value={manualSource} onChange={(e) => setManualSource(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white outline-none">
+                <option value="">For dish… (e.g. Chicken Biryani)</option>
+                {menuItems.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+              </select>
+              <select value={manualRec} onChange={(e) => setManualRec(e.target.value)} className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white outline-none">
+                <option value="">Recommend… (e.g. Raita)</option>
+                {menuItems
+                  .filter((m: any) => String(m.id) !== manualSource)
+                  .map((m: any) => (<option key={m.id} value={m.id}>{m.name} · {currency}{Number(m.price).toFixed(0)}</option>))}
+              </select>
+              <button onClick={handleManualAdd} className="px-4 py-2 bg-brand-600 text-white text-sm font-bold rounded-lg hover:bg-brand-700 shrink-0">
+                Add
+              </button>
+            </div>
           </div>
 
           {/* Filter */}
@@ -343,6 +396,62 @@ export function UpsellView() {
           )}
         </div>
       </div>
+
+      {/* Generate scope picker: choose dishes, then generate */}
+      {showGenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-gray-100">
+              <h3 className="font-bold text-gray-900">Generate for which dishes?</h3>
+              <p className="text-xs text-gray-500 mt-0.5">New results come back as drafts — approved ones stay untouched.</p>
+              <input
+                value={genSearch}
+                onChange={(e) => setGenSearch(e.target.value)}
+                placeholder="Search dishes…"
+                className="mt-3 w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-brand-500"
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={() => setGenSelected(genFiltered.map((m: any) => String(m.id)))} className="text-xs font-bold text-brand-600 hover:underline">Select all</button>
+                <span className="text-gray-300">|</span>
+                <button onClick={() => setGenSelected([])} className="text-xs font-bold text-gray-500 hover:underline">Clear</button>
+                <span className="ml-auto text-xs font-bold text-gray-600">{genSelected.length} selected</span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+              {genFiltered.map((m: any) => {
+                const on = genSelected.includes(String(m.id));
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setGenSelected((prev) => on ? prev.filter((id) => id !== String(m.id)) : [...prev, String(m.id)])}
+                    className={cn('w-full flex items-center gap-3 p-2 rounded-lg text-left hover:bg-gray-50', on && 'bg-violet-50')}
+                  >
+                    <span className={cn('w-5 h-5 rounded-md border flex items-center justify-center shrink-0', on ? 'bg-violet-600 border-violet-600 text-white' : 'border-gray-300 text-transparent')}>
+                      <Check className="w-3.5 h-3.5" />
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm font-medium text-gray-900 truncate">{m.name}</span>
+                    <span className="text-xs text-gray-400 shrink-0">{m.category}</span>
+                  </button>
+                );
+              })}
+              {genFiltered.length === 0 && <p className="text-center text-sm text-gray-500 py-6">No dishes found.</p>}
+            </div>
+            <div className="p-4 border-t border-gray-100 flex gap-2">
+              <button onClick={() => setShowGenModal(false)} className="flex-1 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-50 rounded-xl">
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerate}
+                disabled={!genSelected.length || isGenerating}
+                className="flex-[2] py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-bold rounded-xl disabled:opacity-50 flex items-center justify-center"
+              >
+                {isGenerating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                Generate ({genSelected.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
