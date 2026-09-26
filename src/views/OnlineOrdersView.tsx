@@ -14,7 +14,45 @@ export function OnlineOrdersView() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selected, setSelected] = useState<any | null>(null);
+  const [riderFor, setRiderFor] = useState<any | null>(null);
   const currency = settings?.currencySymbol || 'Rs.';
+
+  // Book Rider: open the drop location in a map app.
+  // Android: geo: URI opens the system app chooser (Maps, Waze, etc.).
+  // iOS: no chooser exists, so offer Apple / Google / Waze explicitly.
+  // Desktop: Google Maps directions in a new tab.
+  const isAndroid = /android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  const isIOS = /iphone|ipad|ipod/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+
+  const riderLinks = (o: any) => {
+    const lat = Number(o.customer_lat);
+    const lng = Number(o.customer_lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const label = encodeURIComponent(`Delivery ${(o.order_code || '')} ${(o.customer_name || '').slice(0, 40)}`);
+    return {
+      geo: `geo:${lat},${lng}?q=${lat},${lng}(${label})`,
+      apple: `https://maps.apple.com/?daddr=${lat},${lng}&q=${label}`,
+      google: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=&travelmode=driving`,
+      waze: `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`,
+    };
+  };
+
+  const bookRider = (o: any) => {
+    const links = riderLinks(o);
+    if (!links) {
+      toast.error('No GPS location on this order');
+      return;
+    }
+    if (isAndroid) {
+      // System chooser with every installed map app.
+      window.location.href = links.geo;
+    } else if (isIOS) {
+      // iOS: show explicit app choices.
+      setRiderFor(o);
+    } else {
+      window.open(links.google, '_blank', 'noopener');
+    }
+  };
 
   const fetchOrders = async (silent = false) => {
     try {
@@ -126,9 +164,14 @@ export function OnlineOrdersView() {
                   {embed ? (
                     <div>
                       <iframe title={`map-${o.order_code}`} src={embed} className="w-full h-52 border-0" loading="lazy" />
-                      <div className="p-3 flex items-center justify-between bg-gray-50/60">
+                      <div className="p-3 flex items-center justify-between gap-2 bg-gray-50/60 flex-wrap">
                         <span className="text-xs text-gray-500 font-mono">{Number(o.customer_lat).toFixed(5)}, {Number(o.customer_lng).toFixed(5)}</span>
-                        {link && <a href={link} target="_blank" rel="noreferrer" className="flex items-center text-xs font-bold text-brand-600 hover:underline"><ExternalLink className="w-3.5 h-3.5 mr-1" /> Open in Maps</a>}
+                        <div className="flex items-center gap-2">
+                          {link && <a href={link} target="_blank" rel="noreferrer" className="flex items-center text-xs font-bold text-brand-600 hover:underline"><ExternalLink className="w-3.5 h-3.5 mr-1" /> Open in Maps</a>}
+                          <button onClick={() => bookRider(o)} className="flex items-center px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 active:scale-95 transition-all">
+                            🛵 Book Rider
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -164,6 +207,44 @@ export function OnlineOrdersView() {
           </div>
         </div>
       )}
+
+      {/* iOS map-app chooser (Android/Desktop open directly) */}
+      {riderFor && (() => {
+        const links = riderLinks(riderFor);
+        if (!links) return null;
+        const opts = [
+          { label: 'Apple Maps', href: links.apple },
+          { label: 'Google Maps', href: links.google },
+          { label: 'Waze', href: links.waze },
+        ];
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-gray-900/50" onClick={() => setRiderFor(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-bold text-gray-900 text-center">🛵 Book Rider</h3>
+              <p className="text-xs text-gray-500 text-center mt-1 mb-4">
+                Open drop location ({Number(riderFor.customer_lat).toFixed(4)}, {Number(riderFor.customer_lng).toFixed(4)}) in…
+              </p>
+              <div className="space-y-2">
+                {opts.map((o) => (
+                  <a
+                    key={o.label}
+                    href={o.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setRiderFor(null)}
+                    className="block w-full py-3 text-center bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold rounded-xl text-sm"
+                  >
+                    {o.label}
+                  </a>
+                ))}
+                <button onClick={() => setRiderFor(null)} className="block w-full py-3 text-center text-sm font-bold text-gray-500">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
