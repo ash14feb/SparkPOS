@@ -161,12 +161,6 @@ export function PublicMenuView() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsState, setGpsState] = useState<'idle' | 'locating' | 'ok' | 'denied' | 'unsupported'>('idle');
 
-  // Online mode: ask for GPS as soon as the checkout sheet opens.
-  useEffect(() => {
-    if (showCart && isOnline && gpsState === 'idle' && !coords) requestLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCart, isOnline]);
-
   const requestLocation = () => {
     if (!('geolocation' in navigator)) {
       setGpsState('unsupported');
@@ -505,6 +499,14 @@ export function PublicMenuView() {
     (data as any).isOnlineTable === true ||
     String(table?.table_no || '').trim().toUpperCase() === 'ONLINETABLE';
   const tableStatus = String((data as any).tableStatus || table?.status || '').toUpperCase();
+
+  // Online mode: ask for GPS as soon as the checkout sheet opens.
+  // (Placed here — after isOnline is declared — because effect dependency
+  // arrays evaluate during render and must not read later declarations.)
+  useEffect(() => {
+    if (showCart && isOnline && gpsState === 'idle' && !coords) requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCart, isOnline]);
   const hasLiveOrder = (tableStatus === 'CUSTOMER_ORDERED' || tableStatus === 'HAVING_FOOD') && !!activeOrder;
   const isHavingFood = tableStatus === 'HAVING_FOOD';
   const customerOrdered = tableStatus === 'CUSTOMER_ORDERED' || !!placedOrder;
