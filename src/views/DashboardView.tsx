@@ -70,6 +70,7 @@ export function DashboardView() {
     let card = 0;
     let dineInSale = 0;
     let takeawaySale = 0;
+    let onlineSale = 0;
 
     // Customers = distinct people (phone preferred, then name). Orders with
     // no customer info each count as one walk-in visit. (Previously this
@@ -90,11 +91,12 @@ export function DashboardView() {
 
       const ot = String(order.orderType || order.order_type || 'TAKEAWAY').toUpperCase();
       if (ot === 'DINEIN' || ot === 'DINE IN' || ot === 'DINE_IN') dineInSale += Number(order.total) || 0;
+      else if (ot === 'ONLINE') onlineSale += Number(order.total) || 0;
       else takeawaySale += Number(order.total) || 0;
     });
     totalCustomers = seenCustomers.size;
 
-    return { totalSale, totalCustomers, cash, upi, card, dineInSale, takeawaySale };
+    return { totalSale, totalCustomers, cash, upi, card, dineInSale, takeawaySale, onlineSale };
   }, [filteredOrders]);
 
   const expenseToday = useMemo(() => {
@@ -241,21 +243,23 @@ export function DashboardView() {
             </div>
           </div>
 
-          {/* Dine-In / Take-Away split (food businesses only) */}
-          {isFoodBusiness && (
-            <div className="col-span-2 md:col-span-5 grid grid-cols-2 gap-2 sm:gap-4">
-              {dineInEnabled && (
-                <div className="bg-orange-50 p-3 sm:p-4 rounded-xl shadow-sm border border-orange-200 flex flex-col justify-between">
-                  <div className="text-orange-700 mb-1 sm:mb-2"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🍽️ Dine-In Sale</span></div>
-                  <p className="text-sm sm:text-xl font-display font-bold text-orange-900">{formatCurrency(metrics.dineInSale)}</p>
-                </div>
-              )}
-              <div className={cn('bg-teal-50 p-3 sm:p-4 rounded-xl shadow-sm border border-teal-200 flex flex-col justify-between', !dineInEnabled && 'col-span-2')}>
-                <div className="text-teal-700 mb-1 sm:mb-2"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🛍️ Take Away Sale</span></div>
-                <p className="text-sm sm:text-xl font-display font-bold text-teal-900">{formatCurrency(metrics.takeawaySale)}</p>
+          {/* Order-type split: Dine-In / Take Away / Online — colorful cards */}
+          <div className="col-span-2 md:col-span-5 grid grid-cols-3 gap-2 sm:gap-4">
+            {(!isFoodBusiness || dineInEnabled) && (
+              <div className="bg-gradient-to-br from-orange-500 to-amber-500 p-3 sm:p-4 rounded-xl shadow-md shadow-orange-500/20 text-white flex flex-col justify-between min-h-[86px]">
+                <div className="mb-1 sm:mb-2 opacity-90"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🍽️ Dine-In</span></div>
+                <p className="text-sm sm:text-xl font-display font-bold">{formatCurrency(metrics.dineInSale)}</p>
               </div>
+            )}
+            <div className="bg-gradient-to-br from-teal-500 to-emerald-500 p-3 sm:p-4 rounded-xl shadow-md shadow-teal-500/20 text-white flex flex-col justify-between min-h-[86px]">
+              <div className="mb-1 sm:mb-2 opacity-90"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🛍️ Take Away</span></div>
+              <p className="text-sm sm:text-xl font-display font-bold">{formatCurrency(metrics.takeawaySale)}</p>
             </div>
-          )}
+            <div className="bg-gradient-to-br from-violet-600 to-fuchsia-500 p-3 sm:p-4 rounded-xl shadow-md shadow-violet-500/20 text-white flex flex-col justify-between min-h-[86px]">
+              <div className="mb-1 sm:mb-2 opacity-90"><span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">🛵 Online</span></div>
+              <p className="text-sm sm:text-xl font-display font-bold">{formatCurrency(metrics.onlineSale)}</p>
+            </div>
+          </div>
         </div>
 
         {/* Customer Flow Chart */}
