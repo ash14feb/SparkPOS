@@ -123,6 +123,11 @@ export const api = {
   // Online order acknowledgement (stops the alarm): ACCEPTED or REJECTED.
   acknowledgeOnlineOrder: (code: string, accept: boolean) =>
     request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status: accept ? 'ACCEPTED' : 'REJECTED' }) }),
+  // Online flow: mark READY, then confirm payment received (sets PAID + mode).
+  markOnlineReady: (code: string) =>
+    request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status: 'READY' }) }),
+  confirmOnlinePayment: (code: string, payment_mode: 'CASH' | 'UPI' | 'CARD') =>
+    request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status: 'PAID', payment_mode }) }),
   
   // Reviews (staff)
   getReviews: (date?: string) => request(`/api/reviews${date ? `?date=${encodeURIComponent(date)}` : ''}`),

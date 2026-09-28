@@ -1,10 +1,67 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Globe, Search, MapPin, Phone, User, X, ExternalLink, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Globe, Search, MapPin, Phone, User, X, ExternalLink, RefreshCw, Banknote, QrCode, CreditCard } from 'lucide-react';
 import { api } from '../lib/api';
 import { usePosStore } from '../store/usePosStore';
 import { dbTimeMs, formatDateTime } from '../lib/datetime';
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
+
+// Live "elapsed since order received" timer (ticks every 30s).
+function ElapsedTimer({ since, className }: { since: any; className?: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30000);
+    return () => window.clearInterval(id);
+  }, []);
+  if (!since) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - dbTimeMs(since)) / 60000));
+  const label = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
+  return <span className={className}>⏱ {label}</span>;
+}
+
+// Swipe-to-confirm slider (pointer drag past 85% confirms).
+function SwipeConfirm({ label, className, knobClassName, onConfirm }: { label: string; className?: string; knobClassName?: string; onConfirm: () => void }) {
+  const [pct, setPct] = useState(0);
+  const dragging = useRef(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={trackRef}
+      className={cn('relative h-12 rounded-xl overflow-hidden select-none border touch-none', className)}
+      onPointerMove={(e) => {
+        if (!dragging.current || !trackRef.current) return;
+        const rect = trackRef.current.getBoundingClientRect();
+        setPct(Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)));
+      }}
+      onPointerUp={() => {
+        dragging.current = false;
+        if (pct > 85) onConfirm();
+        setPct(0);
+      }}
+      onPointerLeave={() => { if (dragging.current) { dragging.current = false; setPct(0); } }}
+    >
+      <div className="absolute inset-0 transition-all" style={{ width: `${pct}%` }} />
+      <span className={cn('absolute inset-0 flex items-center justify-center text-sm font-bold', pct > 40 ? 'text-white' : 'text-gray-600')}>
+        {label} →
+      </span>
+      <div
+        className={cn('absolute top-1 bottom-1 w-12 rounded-lg shadow flex items-center justify-center cursor-grab font-bold bg-white', knobClassName)}
+        style={{ left: `calc(${pct}% - ${pct * 0.48}px + 4px)` }}
+        onPointerDown={(e) => { dragging.current = true; (e.target as HTMLElement).setPointerCapture?.(e.pointerId); }}
+      >→</div>
+    </div>
+  );
+}
+
+// Card tint per order status.
+function statusTheme(status: string) {
+  const st = String(status || '').toUpperCase();
+  if (st === 'PAID' || st === 'COMPLETED') return { card: 'border-emerald-300 bg-emerald-50/40', badge: 'bg-emerald-500 text-white', label: st === 'PAID' ? 'Paid ✓' : 'Completed' };
+  if (st === 'READY') return { card: 'border-orange-300 bg-orange-50/50', badge: 'bg-orange-500 text-white', label: 'Ready 🍱' };
+  if (st === 'ACCEPTED') return { card: 'border-sky-300 bg-sky-50/50', badge: 'bg-sky-500 text-white', label: 'Accepted' };
+  if (st === 'REJECTED' || st === 'CANCELLED') return { card: 'border-gray-200 opacity-75', badge: 'bg-gray-400 text-white', label: 'Rejected' };
+  return { card: 'border-amber-300 bg-amber-50/50', badge: 'bg-amber-400 text-amber-950', label: 'Pending ⏳' };
+}
 
 // Separate screen for ONLINETABLE delivery orders: customer + address +
 // live location map. Filters the shared order feed by order_type === ONLINE.
@@ -15,6 +72,8 @@ export function OnlineOrdersView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selected, setSelected] = useState<any | null>(null);
   const [riderFor, setRiderFor] = useState<any | null>(null);
+  const [payFor, setPayFor] = useState<any | null>(null);
+  const [payMode, setPayMode] = useState<'CASH' | 'UPI' | 'CARD'>('CASH');
   const currency = settings?.currencySymbol || 'Rs.';
 
   // Book Rider: open the drop location in a map app.
@@ -88,6 +147,28 @@ export function OnlineOrdersView() {
     }
   };
 
+  const markReady = async (orderCode: string) => {
+    try {
+      await api.markOnlineReady(orderCode);
+      toast.success(`Order ${orderCode} is ready!`);
+      fetchOrders(true);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to mark ready');
+    }
+  };
+
+  const confirmPayment = async () => {
+    if (!payFor) return;
+    try {
+      await api.confirmOnlinePayment(String(payFor.order_code), payMode);
+      toast.success(`Payment (${payMode}) received for ${payFor.order_code}!`);
+      setPayFor(null);
+      fetchOrders(true);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to confirm payment');
+    }
+  };
+
   const onlineOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return (orders || [])
@@ -158,19 +239,26 @@ export function OnlineOrdersView() {
             {onlineOrders.map((o: any) => {
               const embed = mapEmbed(o);
               const link = mapLink(o);
+              const st = String(o.order_status || 'ACTIVE').toUpperCase();
+              const theme = statusTheme(st);
               return (
-                <div key={o.order_code || o.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-2">
+                <div key={o.order_code || o.id} className={cn('rounded-2xl border-2 shadow-sm overflow-hidden', theme.card)}>
+                  <div className="p-4 border-b border-gray-100/70 bg-white/70 flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-bold text-gray-900 truncate">{o.order_code}</p>
-                      <p className="text-xs text-gray-500">{formatDateTime(o.created_at ?? o.timestamp, settings)} · <span className={cn('font-bold', String(o.order_status).toUpperCase() === 'ACTIVE' ? 'text-amber-600' : 'text-emerald-600')}>{o.order_status || 'ACTIVE'}</span></p>
+                      <p className="font-bold text-gray-900 truncate flex items-center gap-2 flex-wrap">
+                        {o.order_code}
+                        <span className={cn('text-[10px] font-black px-2 py-0.5 rounded-full uppercase', theme.badge)}>{theme.label}</span>
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {formatDateTime(o.created_at ?? o.timestamp, settings)} · <ElapsedTimer since={o.created_at ?? o.timestamp} className="font-bold text-gray-700" />
+                      </p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-display font-bold text-lg text-brand-600">{currency}{Number(o.total_amount ?? o.total ?? 0).toFixed(2)}</p>
                       <button onClick={() => setSelected(o)} className="text-xs font-bold text-brand-600 hover:underline">View items</button>
                     </div>
                   </div>
-                  {String(o.order_status || '').toUpperCase() === 'ACTIVE' && (
+                  {st === 'ACTIVE' && (
                     <div className="px-4 pt-3 flex gap-2">
                       <button onClick={() => acknowledge(String(o.order_code), true)} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-black rounded-xl hover:bg-emerald-700 active:scale-[0.99]">
                         ✓ ACCEPT ORDER
@@ -180,14 +268,22 @@ export function OnlineOrdersView() {
                       </button>
                     </div>
                   )}
-                  {String(o.order_status || '').toUpperCase() !== 'ACTIVE' && (
+                  {st === 'ACCEPTED' && (
                     <div className="px-4 pt-3">
-                      <span className={cn(
-                        'inline-block text-[11px] font-black px-2.5 py-1 rounded-full uppercase',
-                        String(o.order_status).toUpperCase() === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
-                      )}>
-                        {String(o.order_status).toUpperCase() === 'ACCEPTED' ? '✓ Accepted' : String(o.order_status)}
-                      </span>
+                      <SwipeConfirm
+                        label="Swipe to Mark Ready"
+                        className="bg-sky-100 border-sky-300"
+                        onConfirm={() => markReady(String(o.order_code))}
+                      />
+                    </div>
+                  )}
+                  {st === 'READY' && (
+                    <div className="px-4 pt-3">
+                      <SwipeConfirm
+                        label="Swipe to Confirm Payment Received"
+                        className="bg-orange-100 border-orange-300"
+                        onConfirm={() => { setPayMode('CASH'); setPayFor(o); }}
+                      />
                     </div>
                   )}
                   <div className="p-4 space-y-2 text-sm">
@@ -239,6 +335,41 @@ export function OnlineOrdersView() {
               <span>Total</span>
               <span>{currency}{Number(selected.total_amount ?? selected.total ?? 0).toFixed(2)}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment received popup: pick mode, then order leaves pending */}
+      {payFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50" onClick={() => setPayFor(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-900 text-center">Payment Received?</h3>
+            <p className="text-xs text-gray-500 text-center mt-1 mb-1">{payFor.order_code} · {currency}{Number(payFor.total_amount ?? payFor.total ?? 0).toFixed(2)}</p>
+            <p className="text-xs text-gray-500 text-center mb-4">How did the customer pay?</p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {[
+                { mode: 'CASH' as const, icon: Banknote, active: 'bg-emerald-600 text-white shadow-md' },
+                { mode: 'UPI' as const, icon: QrCode, active: 'bg-purple-600 text-white shadow-md' },
+                { mode: 'CARD' as const, icon: CreditCard, active: 'bg-blue-600 text-white shadow-md' },
+              ].map(({ mode, icon: Icon, active }) => (
+                <button
+                  key={mode}
+                  onClick={() => setPayMode(mode)}
+                  className={cn(
+                    'flex flex-col items-center justify-center py-3 rounded-xl text-xs font-black transition-all border',
+                    payMode === mode ? active : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                  )}
+                >
+                  <Icon className="w-5 h-5 mb-1" /> {mode}
+                </button>
+              ))}
+            </div>
+            <button onClick={confirmPayment} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 active:scale-[0.99]">
+              ✓ Confirm {payMode} Payment Received
+            </button>
+            <button onClick={() => setPayFor(null)} className="w-full mt-2 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-50 rounded-xl">
+              Cancel
+            </button>
           </div>
         </div>
       )}

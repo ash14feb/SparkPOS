@@ -188,8 +188,21 @@ export function OrdersView() {
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order) => (
-                    <tr key={order.id} onClick={() => setSelectedOrder(order)} className="hover:bg-gray-50 transition-colors cursor-pointer">
+                  filteredOrders.map((order) => {
+                    const st = String(order.order_status || '').toUpperCase();
+                    const isPaid = st === 'PAID' || st === 'COMPLETED';
+                    const isPending = st === 'ACTIVE' || st === 'PENDING' || st === '';
+                    return (
+                    <tr
+                      key={order.id}
+                      onClick={() => setSelectedOrder(order)}
+                      className={cn(
+                        'transition-colors cursor-pointer',
+                        isPaid ? 'bg-emerald-50/70 hover:bg-emerald-50' :
+                        isPending ? 'bg-amber-50/70 hover:bg-amber-50' :
+                        'hover:bg-gray-50'
+                      )}
+                    >
                       <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                         <div className="font-medium text-gray-900 text-sm">{order.order_code}</div>
                         {order.table_no || order.table_id ? (
@@ -218,7 +231,8 @@ export function OrdersView() {
                         {settings?.currencySymbol || 'Rs.'} {totalOf(order).toFixed(2)}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

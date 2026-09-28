@@ -126,6 +126,30 @@ export function Layout() {
   }, [location.pathname]);
 
   // ---- Online order alarm loop ----
+  // Note: as a pure web app, polling only runs while this tab is open.
+  // Wake Lock below keeps the billing device's screen on so the alarm
+  // can't be silenced by sleep while the tab stays open.
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestLock = async () => {
+      try {
+        if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch { /* unsupported or denied — alarm still works while awake */ }
+    };
+    requestLock();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        requestLock();
+        checkOnlineOrders();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const audio = new Audio(alarmUrl);
     audio.loop = true;
@@ -469,7 +493,7 @@ export function Layout() {
           {myRole !== 'kitchen' && (
           <NavLink to="/orders" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
             <ListOrdered className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-medium">Transactions</span>
+            <span className="text-[10px] font-medium">Orders</span>
           </NavLink>
           )}
           <NavLink to="/profile" className={({isActive}) => cn("flex flex-col items-center justify-center w-1/5 h-full", isActive ? "text-brand-600" : "text-gray-500 hover:text-gray-900")}>
