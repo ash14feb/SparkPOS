@@ -873,6 +873,55 @@ export function PublicMenuView() {
           <div className="absolute top-2 left-2">
             <DietIndicator name={item.name} category={item.category} />
           </div>
+          {/* Price badge on the photo (bottom-left) */}
+          <div className="absolute bottom-2 left-2 bg-black/75 text-white font-display font-bold text-sm px-2 py-0.5 rounded-lg backdrop-blur-sm shadow">
+            <span className="text-[10px] font-medium text-white/70 mr-0.5">{currencySymbol || 'Rs.'}</span>
+            {effPrice.toFixed(0)}
+            {priceOverride !== undefined && Number(item.recDelta || 0) !== 0 && (
+              <span className="ml-1 text-[10px] font-medium text-white/50 line-through">
+                {Number(item.price || 0).toFixed(0)}
+              </span>
+            )}
+          </div>
+          {/* Add / stepper on the photo (bottom-right) */}
+          <div className="absolute bottom-2 right-2" onClick={(e) => e.stopPropagation()}>
+            {!available ? (
+              <span className="px-2.5 py-1.5 rounded-lg bg-black/70 text-white/80 font-bold text-[11px]">
+                Unavailable
+              </span>
+            ) : !line ? (
+              <button
+                type="button"
+                onClick={() => addToCart({ ...item, id: cartId, price: effPrice })}
+                aria-label={`Add ${item.name}`}
+                className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-lg flex items-center justify-center active:scale-90 transition-all"
+              >
+                <Plus className="w-5 h-5 stroke-[3]" />
+              </button>
+            ) : (
+              <div className="flex items-center bg-slate-900/95 text-white rounded-full p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => changeQty(line.id, -1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                  aria-label="Decrease quantity"
+                >
+                  {line.qty === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-400" /> : <Minus className="w-3.5 h-3.5" />}
+                </button>
+                <span className="font-bold text-sm w-6 text-center text-amber-300 font-mono">
+                  {line.qty}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeQty(line.id, 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                  aria-label="Increase quantity"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
           {!available && (
             <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
               <span className="bg-slate-900/85 text-white text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wide">
@@ -882,7 +931,7 @@ export function PublicMenuView() {
           )}
         </div>
 
-        {/* Name, description, price below the photo */}
+        {/* Name + description below the photo (price & Add live on the photo) */}
         <div className="flex-1 flex flex-col p-3.5">
           <div onClick={() => setSelectedDish({ item, priceOverride })} className="cursor-pointer">
             <h4 className="font-display font-bold text-slate-900 text-[15px] leading-snug">
@@ -906,53 +955,6 @@ export function PublicMenuView() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-stone-100" onClick={(e) => e.stopPropagation()}>
-            <div className="font-display font-bold text-slate-900 text-lg">
-              <span className="text-xs text-stone-500 mr-0.5">{currencySymbol || 'Rs.'}</span>
-              {effPrice.toFixed(0)}
-              {priceOverride !== undefined && Number(item.recDelta || 0) !== 0 && (
-                <span className="ml-1.5 text-[11px] font-medium text-stone-400 line-through">
-                  {currencySymbol || 'Rs.'}{Number(item.price || 0).toFixed(0)}
-                </span>
-              )}
-            </div>
-
-            {!available ? (
-              <span className="px-3 py-1.5 rounded-lg bg-stone-200 text-stone-500 font-display font-bold text-xs">
-                Unavailable
-              </span>
-            ) : !line ? (
-              <button
-                type="button"
-                onClick={() => addToCart({ ...item, id: cartId, price: effPrice })}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-display font-bold text-sm shadow-sm transition-all flex items-center gap-1 active:scale-95"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" /> Add
-              </button>
-            ) : (
-              <div className="flex items-center bg-slate-900 text-white rounded-xl p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => changeQty(line.id, -1)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
-                  aria-label="Decrease quantity"
-                >
-                  {line.qty === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-400" /> : <Minus className="w-3.5 h-3.5" />}
-                </button>
-                <span className="font-bold text-sm w-7 text-center text-amber-300 font-mono">
-                  {line.qty}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => changeQty(line.id, 1)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     );
