@@ -114,6 +114,9 @@ export const api = {
   // Orders
   getDineOrders: (status?: string) => request(`/api/dineorders${status ? `?status=${status}` : ''}`),
   updateDineOrderStatus: (code: string, status: string) => request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  // Online order acknowledgement (stops the alarm): ACCEPTED or REJECTED.
+  acknowledgeOnlineOrder: (code: string, accept: boolean) =>
+    request(`/api/dineorders/${encodeURIComponent(code)}/status`, { method: 'PUT', body: JSON.stringify({ status: accept ? 'ACCEPTED' : 'REJECTED' }) }),
   
   // Reviews (staff)
   getReviews: (date?: string) => request(`/api/reviews${date ? `?date=${encodeURIComponent(date)}` : ''}`),

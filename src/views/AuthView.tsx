@@ -141,19 +141,27 @@ export function AuthView() {
               </>
             )}
 
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username / Email</label>
-              <div className="mt-1">
-                <input id="username" name="username" type="text" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="admin" />
-              </div>
-            </div>
+            {isLogin ? (
+              <>
+                <div>
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username / Email</label>
+                  <div className="mt-1">
+                    <input id="username" name="username" type="text" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="admin" />
+                  </div>
+                </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
-              <div className="mt-1">
-                <input id="password" name="password" type="password" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="••••••••" />
-              </div>
-            </div>
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+                  <div className="mt-1">
+                    <input id="password" name="password" type="password" required className="block w-full appearance-none rounded-lg border border-gray-200 px-3 py-2.5 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm transition-shadow" placeholder="••••••••" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
+                No username or password needed — your admin login credentials will be emailed to you after registration.
+              </p>
+            )}
 
             {isLogin && (
               <div className="flex items-center justify-between">

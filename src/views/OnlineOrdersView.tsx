@@ -69,9 +69,24 @@ export function OnlineOrdersView() {
   useEffect(() => {
     fetchOrders();
     const id = window.setInterval(() => fetchOrders(true), 30000);
-    return () => window.clearInterval(id);
+    const onAck = () => fetchOrders(true);
+    window.addEventListener('sparkpos:online-ack', onAck);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('sparkpos:online-ack', onAck);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const acknowledge = async (orderCode: string, accept: boolean) => {
+    try {
+      await api.acknowledgeOnlineOrder(orderCode, accept);
+      toast.success(accept ? `Order ${orderCode} accepted!` : `Order ${orderCode} rejected`);
+      fetchOrders(true);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update order');
+    }
+  };
 
   const onlineOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -155,6 +170,26 @@ export function OnlineOrdersView() {
                       <button onClick={() => setSelected(o)} className="text-xs font-bold text-brand-600 hover:underline">View items</button>
                     </div>
                   </div>
+                  {String(o.order_status || '').toUpperCase() === 'ACTIVE' && (
+                    <div className="px-4 pt-3 flex gap-2">
+                      <button onClick={() => acknowledge(String(o.order_code), true)} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-black rounded-xl hover:bg-emerald-700 active:scale-[0.99]">
+                        ✓ ACCEPT ORDER
+                      </button>
+                      <button onClick={() => { if (confirm(`Reject order ${o.order_code}?`)) acknowledge(String(o.order_code), false); }} className="flex-1 py-2.5 bg-gray-100 text-gray-700 text-sm font-black rounded-xl hover:bg-gray-200 active:scale-[0.99]">
+                        ✕ REJECT
+                      </button>
+                    </div>
+                  )}
+                  {String(o.order_status || '').toUpperCase() !== 'ACTIVE' && (
+                    <div className="px-4 pt-3">
+                      <span className={cn(
+                        'inline-block text-[11px] font-black px-2.5 py-1 rounded-full uppercase',
+                        String(o.order_status).toUpperCase() === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                      )}>
+                        {String(o.order_status).toUpperCase() === 'ACCEPTED' ? '✓ Accepted' : String(o.order_status)}
+                      </span>
+                    </div>
+                  )}
                   <div className="p-4 space-y-2 text-sm">
                     <p className="flex items-center gap-2 text-gray-800"><User className="w-4 h-4 text-gray-400 shrink-0" /><span className="font-semibold">{o.customer_name || '—'}</span></p>
                     {o.customer_phone && <p className="flex items-center gap-2 text-gray-800"><Phone className="w-4 h-4 text-gray-400 shrink-0" /><a href={`tel:${o.customer_phone}`} className="text-brand-600 font-medium">{o.customer_phone}</a></p>}

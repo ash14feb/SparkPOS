@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -32,6 +32,7 @@ import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 import { canAccessPath, normRole } from '../lib/roles';
+import alarmUrl from '../alarm.mp3';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -59,6 +60,11 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Online-order alarm: unacknowledged (ACTIVE) ONLINE orders ring alarm.mp3
+  // on loop until each is Accepted or Rejected — on any screen.
+  const [unackedOnline, setUnackedOnline] = useState<any[]>([]);
+  const alarmRef = useRef<HTMLAudioElement | null>(null);
+  const seenOnlineRef = useRef<Set<string>>(new Set());
   const [occupiedCount, setOccupiedCount] = useState(0);
   const [attentionCount, setAttentionCount] = useState(0);
   const [posMobileView, setPosMobileView] = useState<'menu' | 'cart'>('menu');
@@ -118,6 +124,84 @@ export function Layout() {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // ---- Online order alarm loop ----
+  useEffect(() => {
+    const audio = new Audio(alarmUrl);
+    audio.loop = true;
+    alarmRef.current = audio;
+    // Browsers block audio before first user gesture — unlock on first tap.
+    const unlock = () => {
+      audio.load();
+      // If orders are already waiting, start ringing now.
+      setUnackedOnline((cur) => {
+        if (cur.length) audio.play().catch(() => {});
+        return cur;
+      });
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      audio.pause();
+      alarmRef.current = null;
+    };
+  }, []);
+
+  const checkOnlineOrders = useCallback(async (silent = true) => {
+    try {
+      const res = await api.getDineOrders();
+      const pending = (res.data || []).filter(
+        (o: any) => String(o.order_type || '').toUpperCase() === 'ONLINE' && String(o.order_status || '').toUpperCase() === 'ACTIVE'
+      );
+      setUnackedOnline((prev) => {
+        for (const o of pending) {
+          const code = String(o.order_code || o.id);
+          if (!seenOnlineRef.current.has(code)) {
+            seenOnlineRef.current.add(code);
+            if (prev.some((p: any) => String(p.order_code || p.id) === code)) continue;
+            toast(`🛵 New online order ${code}!`, { icon: '🔔', duration: 6000 });
+          }
+        }
+        return pending;
+      });
+      const audio = alarmRef.current;
+      if (audio) {
+        if (pending.length) audio.play().catch(() => {});
+        else {
+          audio.pause();
+          try { audio.currentTime = 0; } catch {}
+        }
+      }
+    } catch {
+      // silent — alarm polling must never break the shell
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    checkOnlineOrders();
+    const id = setInterval(() => checkOnlineOrders(), 15000);
+    const onFocus = () => checkOnlineOrders();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isAuthenticated, checkOnlineOrders]);
+
+  const acknowledgeOrder = async (orderCode: string, accept: boolean) => {
+    try {
+      await api.acknowledgeOnlineOrder(orderCode, accept);
+      toast.success(accept ? `Order ${orderCode} accepted!` : `Order ${orderCode} rejected`);
+      seenOnlineRef.current.add(String(orderCode));
+      checkOnlineOrders();
+      window.dispatchEvent(new CustomEvent('sparkpos:online-ack'));
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update order');
+    }
+  };
+
   // Trial / subscription status — refreshed on login and route change.
   useEffect(() => {
     if (isAuthenticated) fetchSubStatus();
@@ -144,6 +228,40 @@ export function Layout() {
 
   return (
     <div className="flex h-[100dvh] bg-gray-50 overflow-hidden font-sans overscroll-none">
+      {/* 🔔 Online-order alarm banner — rings until every order is accepted/rejected */}
+      {unackedOnline.length > 0 && (
+        <div className="fixed top-0 inset-x-0 z-[80] animate-pulse">
+          <div className="bg-red-600 text-white shadow-2xl">
+            <div className="max-w-3xl mx-auto px-4 py-2.5 space-y-2 max-h-[45vh] overflow-y-auto">
+              <p className="text-center text-sm font-black tracking-wide">
+                🔔 {unackedOnline.length} NEW ONLINE ORDER{unackedOnline.length > 1 ? 'S' : ''} — ACCEPT OR REJECT TO STOP THE ALARM
+              </p>
+              {unackedOnline.map((o: any) => (
+                <div key={o.order_code || o.id} className="flex items-center gap-2 bg-white/15 rounded-xl px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate">{o.order_code} · {o.customer_name || 'Customer'}</p>
+                    <p className="text-xs text-white/85 truncate">
+                      {(o.items || []).reduce((n: number, it: any) => n + Number(it.qty ?? it.quantity ?? 1), 0)} item(s) · Rs.{Number(o.total_amount ?? o.total ?? 0).toFixed(0)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => acknowledgeOrder(String(o.order_code), true)}
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black rounded-lg shrink-0"
+                  >
+                    ✓ ACCEPT
+                  </button>
+                  <button
+                    onClick={() => acknowledgeOrder(String(o.order_code), false)}
+                    className="px-4 py-2 bg-slate-900/70 hover:bg-slate-900 text-white text-xs font-black rounded-lg shrink-0"
+                  >
+                    ✕ REJECT
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Mobile Top Bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center px-4 z-40 shadow-sm">
         {isPosCart ? (
