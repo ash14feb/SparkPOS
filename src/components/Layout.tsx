@@ -33,6 +33,7 @@ import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 import { canAccessPath, normRole } from '../lib/roles';
 import alarmUrl from '../alarm.mp3';
+import dinoscanLogo from '../dinoscan.png';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -276,10 +277,8 @@ export function Layout() {
           <Menu className="w-6 h-6" />
         </button>
         <NavLink to="/dashboard" className="flex items-center">
-          <div className="h-8 w-8 bg-brand-500 rounded-lg flex items-center justify-center mr-3 shadow-sm">
-            <span className="text-white font-display font-bold text-xl leading-none">S</span>
-          </div>
-          <h1 className="font-display font-bold text-xl tracking-tight text-dark-900">SPARKPOS</h1>
+          <img src={dinoscanLogo} alt="DinoScan" className="h-8 w-8 rounded-lg mr-3 shadow-sm object-cover" />
+          <h1 className="font-display font-bold text-xl tracking-tight text-dark-900">DinoScan</h1>
         </NavLink>
         {/* Bluetooth printer shortcut — only on POS, saves the old title row */}
         {location.pathname === '/pos' && (
@@ -337,10 +336,8 @@ export function Layout() {
       )}>
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-100">
           <NavLink to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center">
-            <div className="h-8 w-8 bg-brand-500 rounded-lg flex items-center justify-center mr-3 shadow-sm">
-              <span className="text-white font-display font-bold text-xl leading-none">S</span>
-            </div>
-            <h1 className="font-display font-bold text-xl tracking-tight text-dark-900">SPARKPOS</h1>
+            <img src={dinoscanLogo} alt="DinoScan" className="h-8 w-8 rounded-lg mr-3 shadow-sm object-cover" />
+            <h1 className="font-display font-bold text-xl tracking-tight text-dark-900">DinoScan</h1>
           </NavLink>
           <button 
             onClick={() => setIsMobileMenuOpen(false)}
@@ -420,7 +417,7 @@ export function Layout() {
               </div>
               <h2 className="text-2xl font-display font-bold text-gray-900">Your free trial is over</h2>
               <p className="text-gray-500 mt-2 mb-6 text-sm leading-relaxed">
-                Please subscribe to continue using SPARKPOS — billing, KDS, reports and everything else picks up right where you left off.
+                Please subscribe to continue using DinoScan — billing, KDS, reports and everything else picks up right where you left off.
               </p>
               <button
                 onClick={() => navigate('/subscribe')}

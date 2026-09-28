@@ -34,7 +34,7 @@ export function SubscribeView() {
     try {
       setBusy(true);
       await subscribe(plan);
-      toast.success('Subscription activated — welcome to SPARKPOS Pro!');
+          toast.success('Subscription activated — welcome to DinoScan Pro!');
       navigate('/dashboard');
     } catch (err: any) {
       toast.error(err?.message || 'Subscription failed');
@@ -57,7 +57,7 @@ export function SubscribeView() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg mb-3">
             <Crown className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-gray-900">Upgrade to SPARKPOS Pro</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-gray-900">Upgrade to DinoScan Pro</h1>
           <p className="text-gray-500 mt-2 text-sm sm:text-base">
             {status?.expired
               ? 'Your free trial has ended. Subscribe to keep billing without interruption.'

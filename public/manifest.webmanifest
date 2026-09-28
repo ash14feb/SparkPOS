@@ -1,7 +1,7 @@
 {
-  "name": "SPARKPOS - Premium Point of Sale",
-  "short_name": "SPARKPOS",
-  "description": "SPARKPOS - Premium Point of Sale System",
+  "name": "DinoScan - Premium Point of Sale",
+  "short_name": "DinoScan",
+  "description": "DinoScan - Premium Point of Sale System",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -5,12 +5,33 @@ import { Armchair, Plus, Users, Clock, Loader2, Trash2, Link as LinkIcon, QrCode
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
+import { dbTimeMs } from '../lib/datetime';
+
+export const isOnlineTableNo = (tableNo: any) => String(tableNo || '').trim().toUpperCase() === 'ONLINETABLE';
+
+// Live "occupied for Xm / Xh Ym" timer (ticks every 30s).
+export function OccupiedTimer({ since, className }: { since: any; className?: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30000);
+    return () => window.clearInterval(id);
+  }, []);
+  if (!since) return null;
+  const mins = Math.max(0, Math.floor((Date.now() - dbTimeMs(since)) / 60000));
+  const label = mins < 1 ? 'just now' : mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return (
+    <span className={cn('inline-flex items-center gap-1 font-semibold', className)}>
+      <Clock className="w-3.5 h-3.5" /> {label}
+    </span>
+  );
+}
 
 interface Table {
   id: number;
   table_no: string;
   seats: number;
   status: 'FREE' | 'OCCUPIED' | 'RESERVED' | 'BILLED' | 'HAVING_FOOD' | 'CUSTOMER_ORDERED';
+  occupied_since?: string;
   current_order_code?: string;
   menu_code?: string;
   floor_section?: string;
@@ -376,7 +397,7 @@ export function TablesView() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {tables.map(table => {
+                {tables.filter((t) => !isOnlineTableNo(t.table_no)).map(table => {
                   const havingFood = table.status === 'HAVING_FOOD';
                   const customerOrdered = table.status === 'CUSTOMER_ORDERED';
                   const isOccupied = table.status === 'OCCUPIED' || havingFood || customerOrdered;
@@ -410,6 +431,11 @@ export function TablesView() {
                       {isOccupied && table.current_order_code && (
                         <div className="text-xs text-gray-500 mt-1 flex items-center">
                           <Clock className="w-3.5 h-3.5 mr-1" /> {table.current_order_code}
+                        </div>
+                      )}
+                      {isOccupied && table.occupied_since && (
+                        <div className="text-xs text-amber-700 mt-1">
+                          <OccupiedTimer since={table.occupied_since} />
                         </div>
                       )}
                     </button>

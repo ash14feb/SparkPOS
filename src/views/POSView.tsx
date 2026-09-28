@@ -924,7 +924,7 @@ export function POSView() {
                 <p className="text-gray-500 text-sm">Loading tables...</p>
               ) : (
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                  {tables.map((t: any) => {
+                  {tables.filter((t: any) => String(tableLabel(t) || '').trim().toUpperCase() !== 'ONLINETABLE').map((t: any) => {
                     const st = tableStatusOf(t);
                     const havingFood = st === 'HAVING_FOOD';
                     const customerOrdered = st === 'CUSTOMER_ORDERED';

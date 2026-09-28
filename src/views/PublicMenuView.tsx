@@ -198,6 +198,54 @@ export function PublicMenuView() {
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [copiedOrderCode, setCopiedOrderCode] = useState(false);
 
+  // Online identity gate: name + phone first, remembered per QR link.
+  const onlineStoreKey = `dinoscan-online-${code || 'x'}`;
+  const [onlineIdentity, setOnlineIdentity] = useState<{ name: string; phone: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem(onlineStoreKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const [gateName, setGateName] = useState('');
+  const [gatePhone, setGatePhone] = useState('');
+  const [onlineOrder, setOnlineOrder] = useState<any | null>(null);
+  const [checkingOnline, setCheckingOnline] = useState(false);
+
+  const checkOnlineStatus = async (phone: string) => {
+    try {
+      setCheckingOnline(true);
+      const res = await api.getOnlineOrderStatus(code!, phone);
+      const order = res.data?.order || null;
+      setOnlineOrder(order && order.locked ? order : null);
+      return order;
+    } catch {
+      setOnlineOrder(null);
+      return null;
+    } finally {
+      setCheckingOnline(false);
+    }
+  };
+
+  const submitOnlineGate = async () => {
+    if (!gateName.trim()) return toast.error('Please enter your name');
+    if (!gatePhone.trim()) return toast.error('Please enter your phone number');
+    const ident = { name: gateName.trim(), phone: gatePhone.trim() };
+    try { localStorage.setItem(onlineStoreKey, JSON.stringify(ident)); } catch {}
+    setOnlineIdentity(ident);
+    setCustomerName(ident.name);
+    setCustomerPhone(ident.phone);
+    await checkOnlineStatus(ident.phone);
+  };
+
+  const switchOnlineUser = () => {
+    try { localStorage.removeItem(onlineStoreKey); } catch {}
+    setOnlineIdentity(null);
+    setOnlineOrder(null);
+    setGateName('');
+    setGatePhone('');
+    setCart([]);
+  };
+
   // Ratings (HAVING_FOOD state)
   const [overallRating, setOverallRating] = useState(0);
   const [itemRatings, setItemRatings] = useState<Record<string, number>>({});
@@ -218,6 +266,25 @@ export function PublicMenuView() {
     if (showCart && dataIsOnline && gpsState === 'idle' && !coords) requestLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCart, dataIsOnline]);
+
+  // Online mode: returning customer (same phone) -> prefill + load live order status.
+  useEffect(() => {
+    if (!data || !dataIsOnline || !onlineIdentity) return;
+    setCustomerName((prev) => prev || onlineIdentity.name);
+    setCustomerPhone((prev) => prev || onlineIdentity.phone);
+    if (!onlineOrder) checkOnlineStatus(onlineIdentity.phone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, dataIsOnline]);
+
+  // Online locked order: poll status every 15s.
+  useEffect(() => {
+    if (!onlineOrder?.locked) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && onlineIdentity) checkOnlineStatus(onlineIdentity.phone);
+    }, 15000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlineOrder?.orderCode, onlineIdentity]);
 
   useEffect(() => {
     if (code) {
@@ -400,6 +467,28 @@ export function PublicMenuView() {
       setCart([]);
       setKitchenNotes('');
       setShowCart(false);
+      // Online: jump straight to the locked tracking screen.
+      if (isOnline && onlineIdentity) {
+        const order = await checkOnlineStatus(onlineIdentity.phone);
+        if (!order?.locked) {
+          // Fallback: lock locally from the placed order so it can't be edited.
+          setOnlineOrder({
+            orderCode: res.data?.orderCode || 'ORDER',
+            orderStatus: 'ACTIVE',
+            customerName: onlineIdentity.name,
+            customerPhone: onlineIdentity.phone,
+            address: deliveryAddress,
+            landmark,
+            total: res.data?.total ?? cartTotal,
+            items: [],
+            locked: true,
+          });
+        }
+        setDeliveryAddress('');
+        setLandmark('');
+        setCoords(null);
+        setGpsState('idle');
+      }
       toast.success(
         res.data?.isOnline || isOnline
           ? 'Online order placed! 🛵 We’ll deliver it hot & fresh!'
@@ -503,6 +592,121 @@ export function PublicMenuView() {
             <RotateCw className="w-4 h-4" /> Try Reloading
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // ---- Online identity gate: name + phone before the menu ----
+  if (data && dataIsOnline && !onlineIdentity) {
+    return (
+      <div className="min-h-screen bg-[#faf8f5] flex items-center justify-center p-4">
+        <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-stone-200/80 max-w-md w-full">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 text-2xl">
+            🛵
+          </div>
+          <h2 className="text-2xl font-display font-bold text-slate-900 text-center">Welcome to {data.restaurantName || 'our restaurant'}!</h2>
+          <p className="text-sm text-stone-500 text-center mt-1 mb-5">Online delivery ordering — tell us who you are to begin.</p>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Your Name *</label>
+              <input
+                type="text"
+                value={gateName}
+                onChange={(e) => setGateName(e.target.value)}
+                placeholder="e.g. Rahul Sharma"
+                className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">Phone Number *</label>
+              <input
+                type="tel"
+                value={gatePhone}
+                onChange={(e) => setGatePhone(e.target.value)}
+                placeholder="e.g. 98765 43210"
+                className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              />
+            </div>
+            <button
+              onClick={submitOnlineGate}
+              disabled={checkingOnline}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {checkingOnline ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Start Ordering <ArrowRight className="w-4 h-4" /></>}
+            </button>
+            <p className="text-[11px] text-stone-400 text-center">Returning with the same number? We'll show your current order status.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Online locked order: status tracking, no modification ----
+  if (data && dataIsOnline && onlineOrder?.locked) {
+    const o = onlineOrder;
+    const st = String(o.orderStatus || 'ACTIVE').toUpperCase();
+    const steps = ['ACTIVE', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED'];
+    const stepLabels: Record<string, string> = { ACTIVE: 'Order placed', ACCEPTED: 'Accepted', PREPARING: 'Being prepared', READY: 'Out for delivery', COMPLETED: 'Delivered' };
+    const curIdx = Math.max(0, steps.indexOf(st === 'PAID' ? 'COMPLETED' : st));
+    return (
+      <div className="min-h-screen bg-[#faf8f5] pb-10">
+        <header className="bg-white/90 backdrop-blur-md border-b border-stone-200/80">
+          <div className="max-w-2xl mx-auto px-4 py-3.5">
+            <h1 className="text-lg font-display font-bold text-slate-900 truncate">{data.restaurantName || 'Our Menu'}</h1>
+            <p className="text-xs text-stone-500">🛵 Online delivery · {o.customerName}</p>
+          </div>
+        </header>
+        <main className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
+          <div className="bg-white rounded-3xl border border-stone-200/80 p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display font-bold text-slate-900">Order {o.orderCode}</h2>
+              <button onClick={() => onlineIdentity && checkOnlineStatus(onlineIdentity.phone)} className="flex items-center text-xs font-bold text-emerald-700 hover:underline">
+                <RotateCw className="w-3.5 h-3.5 mr-1" /> Refresh
+              </button>
+            </div>
+            {/* Progress steps */}
+            <div className="flex items-center mt-4 mb-1">
+              {steps.map((s, i) => (
+                <div key={s} className="flex-1 flex items-center last:flex-none">
+                  <div className="flex flex-col items-center w-full">
+                    <span className={cn(
+                      'w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
+                      i <= curIdx ? 'bg-emerald-500 text-white' : 'bg-stone-200 text-stone-400'
+                    )}>
+                      {i < curIdx ? '✓' : i + 1}
+                    </span>
+                    <span className={cn('text-[9px] font-bold mt-1 text-center leading-tight', i <= curIdx ? 'text-emerald-700' : 'text-stone-400')}>
+                      {stepLabels[s]}
+                    </span>
+                  </div>
+                  {i < steps.length - 1 && <div className={cn('flex-1 h-0.5 mx-1 mb-5 rounded', i < curIdx ? 'bg-emerald-500' : 'bg-stone-200')} />}
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-stone-500 mt-3">🔒 This order is confirmed and can't be modified. For a new order, use a different phone number.</p>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-stone-200/80 p-5 shadow-sm">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">Your items</h3>
+            <div className="space-y-2">
+              {(o.items || []).map((it: any, i: number) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-slate-700">{it.qty}x {it.name}</span>
+                  <span className="font-semibold">{data.currencySymbol || 'Rs.'}{Number(it.lineTotal ?? it.price * it.qty).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between font-display font-bold text-lg mt-3 pt-3 border-t">
+              <span>Total</span>
+              <span>{data.currencySymbol || 'Rs.'}{Number(o.total ?? 0).toFixed(2)}</span>
+            </div>
+            {o.address ? <p className="text-xs text-stone-500 mt-2">📍 Delivering to: {o.address}{o.landmark ? ` (${o.landmark})` : ''}</p> : null}
+          </div>
+
+          <button onClick={switchOnlineUser} className="w-full py-3 text-sm font-bold text-stone-500 hover:text-stone-800">
+            Ordering for someone else? Use a different number →
+          </button>
+        </main>
       </div>
     );
   }
@@ -780,6 +984,17 @@ export function PublicMenuView() {
 
       {/* Main Container */}
       <main className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
+        {isOnline && onlineIdentity && (
+          <div className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4 shadow-md flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-display font-bold text-lg leading-tight truncate">Welcome, {onlineIdentity.name}! 👋</p>
+              <p className="text-xs text-white/85">Select your items below — delivery to your doorstep.</p>
+            </div>
+            <button onClick={switchOnlineUser} className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-lg shrink-0">
+              Not you?
+            </button>
+          </div>
+        )}
         {/* ==================================================================== */}
         {/* LIVE STATE 1: HAVING FOOD (Meal Served, Bon Appétit & Review Suite) */}
         {/* ==================================================================== */}

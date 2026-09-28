@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
+import dinoscanLogo from '../dinoscan.png';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
@@ -78,7 +79,7 @@ export function AuthView() {
     try {
       if (isLogin) {
         await login(data);
-        toast.success('Welcome back to SPARKPOS!');
+        toast.success('Welcome back to DinoScan!');
         navigate('/pos');
       } else {
         await api.register({
@@ -104,11 +105,9 @@ export function AuthView() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 shadow-lg mb-4">
-           <span className="text-white font-display font-bold text-4xl leading-none">S</span>
-        </div>
+        <img src={dinoscanLogo} alt="DinoScan" className="inline-flex items-center justify-center w-16 h-16 rounded-2xl shadow-lg mb-4 object-cover" />
         <h2 className="mt-2 text-center text-3xl font-display font-bold tracking-tight text-gray-900">
-          {isLogin ? 'Sign in to SPARKPOS' : 'Register your business'}
+          {isLogin ? 'Sign in to DinoScan' : 'Register your business'}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
           {isLogin ? "Enter your details to access your point of sale." : "Start your premium POS experience today."}

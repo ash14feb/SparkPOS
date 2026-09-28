@@ -70,7 +70,7 @@ export function InstallPrompt() {
           <span className="text-white font-display font-bold text-2xl leading-none">S</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-sm">Install SPARKPOS app</p>
+          <p className="font-bold text-sm">Install DinoScan app</p>
           {deferred || !isIOS() ? (
             <p className="text-xs text-white/70">Faster access, works offline, fullscreen billing.</p>
           ) : (

@@ -103,6 +103,12 @@ export const api = {
       if (!res.ok) throw new Error(body.message || 'Could not save review');
       return body;
     }),
+  getOnlineOrderStatus: (code: string, phone: string) =>
+    fetch(`${API_BASE_URL}/api/tables/online-order/status/${code}?phone=${encodeURIComponent(phone)}`, { cache: 'no-store' }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Could not load order status');
+      return body;
+    }),
   
   // KOT
   getKot: (status?: string) => request(`/api/kot${status ? `?status=${status}` : ''}`),
