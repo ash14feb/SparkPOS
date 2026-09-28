@@ -135,6 +135,8 @@ export const api = {
 
   // Customers
   getCustomers: () => request('/api/customers'),
+  createCustomer: (data: { name: string; phone: string; email?: string }) =>
+    request('/api/customers', { method: 'POST', body: JSON.stringify(data) }),
 
   // Public bill fetch (no auth — opened on the customer's phone).
   // Requires backend: GET /api/pos/bills/:orderId -> { success, data: bill }
