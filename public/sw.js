@@ -1,5 +1,5 @@
 /* SPARKPOS service worker — offline app shell for installed PWA. */
-const CACHE = 'sparkpos-shell-v1';
+const CACHE = 'dinoscan-shell-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

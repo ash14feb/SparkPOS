@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Search, MapPin, Phone, User, X, ExternalLink, RefreshCw, Banknote, QrCode, CreditCard } from 'lucide-react';
+import { Globe, Search, MapPin, Phone, User, X, ExternalLink, RefreshCw, Banknote, QrCode, CreditCard, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { usePosStore } from '../store/usePosStore';
 import { dbTimeMs, formatDateTime } from '../lib/datetime';
@@ -73,7 +73,9 @@ export function OnlineOrdersView() {
   const [selected, setSelected] = useState<any | null>(null);
   const [riderFor, setRiderFor] = useState<any | null>(null);
   const [payFor, setPayFor] = useState<any | null>(null);
-  const [payMode, setPayMode] = useState<'CASH' | 'UPI' | 'CARD'>('CASH');
+  // No default: staff must actively pick a mode before confirming.
+  const [payMode, setPayMode] = useState<'CASH' | 'UPI' | 'CARD' | ''>('');
+  const [busyCode, setBusyCode] = useState<string | null>(null);
   const currency = settings?.currencySymbol || 'Rs.';
 
   // Book Rider: open the drop location in a map app.
@@ -139,33 +141,44 @@ export function OnlineOrdersView() {
 
   const acknowledge = async (orderCode: string, accept: boolean) => {
     try {
+      setBusyCode(orderCode);
       await api.acknowledgeOnlineOrder(orderCode, accept);
       toast.success(accept ? `Order ${orderCode} accepted!` : `Order ${orderCode} rejected`);
       fetchOrders(true);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update order');
+    } finally {
+      setBusyCode((cur) => (cur === orderCode ? null : cur));
     }
   };
 
   const markReady = async (orderCode: string) => {
     try {
+      setBusyCode(orderCode);
       await api.markOnlineReady(orderCode);
       toast.success(`Order ${orderCode} is ready!`);
       fetchOrders(true);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to mark ready');
+    } finally {
+      setBusyCode((cur) => (cur === orderCode ? null : cur));
     }
   };
 
+  const [payBusy, setPayBusy] = useState(false);
   const confirmPayment = async () => {
     if (!payFor) return;
+    if (!payMode) return toast.error('Please select a payment mode');
     try {
+      setPayBusy(true);
       await api.confirmOnlinePayment(String(payFor.order_code), payMode);
       toast.success(`Payment (${payMode}) received for ${payFor.order_code}!`);
       setPayFor(null);
       fetchOrders(true);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to confirm payment');
+    } finally {
+      setPayBusy(false);
     }
   };
 
@@ -235,67 +248,79 @@ export function OnlineOrdersView() {
             <p className="text-sm mt-1">Create the <b>ONLINETABLE</b> in Table Settings and share its QR — delivery orders with GPS location will land here.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 max-w-7xl mx-auto">
             {onlineOrders.map((o: any) => {
               const embed = mapEmbed(o);
               const link = mapLink(o);
               const st = String(o.order_status || 'ACTIVE').toUpperCase();
               const theme = statusTheme(st);
               return (
-                <div key={o.order_code || o.id} className={cn('rounded-2xl border-2 shadow-sm overflow-hidden', theme.card)}>
-                  <div className="p-4 border-b border-gray-100/70 bg-white/70 flex items-center justify-between gap-2">
+                <div key={o.order_code || o.id} className={cn('rounded-2xl border-2 shadow-sm overflow-hidden flex flex-col', theme.card)}>
+                  <div className="p-3 border-b border-gray-100/70 bg-white/70 flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-bold text-gray-900 truncate flex items-center gap-2 flex-wrap">
-                        {o.order_code}
-                        <span className={cn('text-[10px] font-black px-2 py-0.5 rounded-full uppercase', theme.badge)}>{theme.label}</span>
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {formatDateTime(o.created_at ?? o.timestamp, settings)} · <ElapsedTimer since={o.created_at ?? o.timestamp} className="font-bold text-gray-700" />
+                      <p className="font-bold text-gray-900 text-sm truncate">{o.order_code}</p>
+                      <p className="mt-0.5"><span className={cn('text-[10px] font-black px-2 py-0.5 rounded-full uppercase', theme.badge)}>{theme.label}</span></p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        <ElapsedTimer since={o.created_at ?? o.timestamp} className="font-bold text-gray-700" />
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-display font-bold text-lg text-brand-600">{currency}{Number(o.total_amount ?? o.total ?? 0).toFixed(2)}</p>
-                      <button onClick={() => setSelected(o)} className="text-xs font-bold text-brand-600 hover:underline">View items</button>
+                      <p className="font-display font-bold text-base text-brand-600">{currency}{Number(o.total_amount ?? o.total ?? 0).toFixed(2)}</p>
+                      <button onClick={() => setSelected(o)} className="text-[11px] font-bold text-brand-600 hover:underline">Items</button>
                     </div>
                   </div>
                   {st === 'ACTIVE' && (
-                    <div className="px-4 pt-3 flex gap-2">
-                      <button onClick={() => acknowledge(String(o.order_code), true)} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-black rounded-xl hover:bg-emerald-700 active:scale-[0.99]">
-                        ✓ ACCEPT ORDER
+                    <div className="px-3 pt-2.5 flex gap-2">
+                      <button
+                        onClick={() => acknowledge(String(o.order_code), true)}
+                        disabled={busyCode === String(o.order_code)}
+                        className="flex-1 py-2 bg-emerald-600 text-white text-xs font-black rounded-lg hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-1"
+                      >
+                        {busyCode === String(o.order_code) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '✓ ACCEPT'}
                       </button>
-                      <button onClick={() => { if (confirm(`Reject order ${o.order_code}?`)) acknowledge(String(o.order_code), false); }} className="flex-1 py-2.5 bg-gray-100 text-gray-700 text-sm font-black rounded-xl hover:bg-gray-200 active:scale-[0.99]">
-                        ✕ REJECT
+                      <button
+                        onClick={() => { if (confirm(`Reject order ${o.order_code}?`)) acknowledge(String(o.order_code), false); }}
+                        disabled={busyCode === String(o.order_code)}
+                        className="flex-1 py-2 bg-gray-100 text-gray-700 text-xs font-black rounded-lg hover:bg-gray-200 active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-1"
+                      >
+                        {busyCode === String(o.order_code) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '✕ REJECT'}
                       </button>
                     </div>
                   )}
                   {st === 'ACCEPTED' && (
-                    <div className="px-4 pt-3">
-                      <SwipeConfirm
-                        label="Swipe to Mark Ready"
-                        className="bg-sky-100 border-sky-300"
-                        onConfirm={() => markReady(String(o.order_code))}
-                      />
+                    <div className="px-3 pt-2.5">
+                      {busyCode === String(o.order_code) ? (
+                        <div className="h-11 rounded-xl bg-sky-100 border border-sky-300 flex items-center justify-center text-sky-700 text-xs font-bold">
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" /> Marking ready…
+                        </div>
+                      ) : (
+                        <SwipeConfirm
+                          label="Swipe: Ready"
+                          className="bg-sky-100 border-sky-300"
+                          onConfirm={() => markReady(String(o.order_code))}
+                        />
+                      )}
                     </div>
                   )}
                   {st === 'READY' && (
-                    <div className="px-4 pt-3">
+                    <div className="px-3 pt-2.5">
                       <SwipeConfirm
-                        label="Swipe to Confirm Payment Received"
+                        label="Swipe: Payment Rcvd"
                         className="bg-orange-100 border-orange-300"
-                        onConfirm={() => { setPayMode('CASH'); setPayFor(o); }}
+                        onConfirm={() => { setPayMode(''); setPayFor(o); }}
                       />
                     </div>
                   )}
-                  <div className="p-4 space-y-2 text-sm">
-                    <p className="flex items-center gap-2 text-gray-800"><User className="w-4 h-4 text-gray-400 shrink-0" /><span className="font-semibold">{o.customer_name || '—'}</span></p>
-                    {o.customer_phone && <p className="flex items-center gap-2 text-gray-800"><Phone className="w-4 h-4 text-gray-400 shrink-0" /><a href={`tel:${o.customer_phone}`} className="text-brand-600 font-medium">{o.customer_phone}</a></p>}
-                    {o.customer_address && <p className="flex items-start gap-2 text-gray-800"><MapPin className="w-4 h-4 text-red-500 shrink-0 mt-0.5" /><span>{o.customer_address}{o.customer_landmark ? ` (${o.customer_landmark})` : ''}</span></p>}
-                    {!o.customer_address && <p className="text-xs text-amber-600 font-medium">No address captured (ordered before location update).</p>}
+                  <div className="p-3 space-y-1.5 text-[13px] flex-1">
+                    <p className="flex items-center gap-1.5 text-gray-800"><User className="w-3.5 h-3.5 text-gray-400 shrink-0" /><span className="font-semibold truncate">{o.customer_name || '—'}</span></p>
+                    {o.customer_phone && <p className="flex items-center gap-1.5 text-gray-800"><Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" /><a href={`tel:${o.customer_phone}`} className="text-brand-600 font-medium">{o.customer_phone}</a></p>}
+                    {o.customer_address && <p className="flex items-start gap-1.5 text-gray-800"><MapPin className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" /><span className="line-clamp-2">{o.customer_address}{o.customer_landmark ? ` (${o.customer_landmark})` : ''}</span></p>}
+                    {!o.customer_address && <p className="text-[11px] text-amber-600 font-medium">No address captured.</p>}
                   </div>
                   {embed ? (
                     <div>
-                      <iframe title={`map-${o.order_code}`} src={embed} className="w-full h-52 border-0" loading="lazy" />
-                      <div className="p-3 flex items-center justify-between gap-2 bg-gray-50/60 flex-wrap">
+                      <iframe title={`map-${o.order_code}`} src={embed} className="w-full h-32 border-0" loading="lazy" />
+                      <div className="p-2.5 flex items-center justify-between gap-2 bg-gray-50/60 flex-wrap">
                         <span className="text-xs text-gray-500 font-mono">{Number(o.customer_lat).toFixed(5)}, {Number(o.customer_lng).toFixed(5)}</span>
                         <div className="flex items-center gap-2">
                           {link && <a href={link} target="_blank" rel="noreferrer" className="flex items-center text-xs font-bold text-brand-600 hover:underline"><ExternalLink className="w-3.5 h-3.5 mr-1" /> Open in Maps</a>}
@@ -345,7 +370,7 @@ export function OnlineOrdersView() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-gray-900 text-center">Payment Received?</h3>
             <p className="text-xs text-gray-500 text-center mt-1 mb-1">{payFor.order_code} · {currency}{Number(payFor.total_amount ?? payFor.total ?? 0).toFixed(2)}</p>
-            <p className="text-xs text-gray-500 text-center mb-4">How did the customer pay?</p>
+            <p className="text-xs text-gray-500 text-center mb-4">How did the customer pay? <span className="font-bold text-red-500">*required</span></p>
             <div className="grid grid-cols-3 gap-2 mb-4">
               {[
                 { mode: 'CASH' as const, icon: Banknote, active: 'bg-emerald-600 text-white shadow-md' },
@@ -364,8 +389,8 @@ export function OnlineOrdersView() {
                 </button>
               ))}
             </div>
-            <button onClick={confirmPayment} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 active:scale-[0.99]">
-              ✓ Confirm {payMode} Payment Received
+            <button onClick={confirmPayment} disabled={!payMode || payBusy} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2">
+              {payBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : `✓ Confirm ${payMode ? `${payMode} ` : ''}Payment Received`}
             </button>
             <button onClick={() => setPayFor(null)} className="w-full mt-2 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-50 rounded-xl">
               Cancel

@@ -21,7 +21,8 @@ import {
   Crown,
   Star,
   Sparkles,
-  Globe
+  Globe,
+  Loader2
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { usePosStore } from '../store/usePosStore';
@@ -215,8 +216,10 @@ export function Layout() {
     };
   }, [isAuthenticated, checkOnlineOrders]);
 
+  const [ackBusy, setAckBusy] = useState<string | null>(null);
   const acknowledgeOrder = async (orderCode: string, accept: boolean) => {
     try {
+      setAckBusy(orderCode);
       await api.acknowledgeOnlineOrder(orderCode, accept);
       toast.success(accept ? `Order ${orderCode} accepted!` : `Order ${orderCode} rejected`);
       seenOnlineRef.current.add(String(orderCode));
@@ -224,6 +227,8 @@ export function Layout() {
       window.dispatchEvent(new CustomEvent('sparkpos:online-ack'));
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update order');
+    } finally {
+      setAckBusy((cur) => (cur === orderCode ? null : cur));
     }
   };
 
@@ -271,15 +276,17 @@ export function Layout() {
                   </div>
                   <button
                     onClick={() => acknowledgeOrder(String(o.order_code), true)}
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black rounded-lg shrink-0"
+                    disabled={ackBusy === String(o.order_code)}
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black rounded-lg shrink-0 disabled:opacity-70 flex items-center gap-1"
                   >
-                    ✓ ACCEPT
+                    {ackBusy === String(o.order_code) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '✓ ACCEPT'}
                   </button>
                   <button
                     onClick={() => acknowledgeOrder(String(o.order_code), false)}
-                    className="px-4 py-2 bg-slate-900/70 hover:bg-slate-900 text-white text-xs font-black rounded-lg shrink-0"
+                    disabled={ackBusy === String(o.order_code)}
+                    className="px-4 py-2 bg-slate-900/70 hover:bg-slate-900 text-white text-xs font-black rounded-lg shrink-0 disabled:opacity-70 flex items-center gap-1"
                   >
-                    ✕ REJECT
+                    {ackBusy === String(o.order_code) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '✕ REJECT'}
                   </button>
                 </div>
               ))}

@@ -211,12 +211,15 @@ export function PublicMenuView() {
   const [onlineOrder, setOnlineOrder] = useState<any | null>(null);
   const [checkingOnline, setCheckingOnline] = useState(false);
 
+  const [onlineHistory, setOnlineHistory] = useState<any[]>([]);
+
   const checkOnlineStatus = async (phone: string) => {
     try {
       setCheckingOnline(true);
       const res = await api.getOnlineOrderStatus(code!, phone);
       const order = res.data?.order || null;
       setOnlineOrder(order && order.locked ? order : null);
+      setOnlineHistory(res.data?.history || []);
       return order;
     } catch {
       setOnlineOrder(null);
@@ -241,9 +244,43 @@ export function PublicMenuView() {
     try { localStorage.removeItem(onlineStoreKey); } catch {}
     setOnlineIdentity(null);
     setOnlineOrder(null);
+    setOnlineHistory([]);
     setGateName('');
     setGatePhone('');
     setCart([]);
+  };
+
+  // Rating a past (completed/paid) online order.
+  const [rateFor, setRateFor] = useState<any | null>(null);
+  const [rateStars, setRateStars] = useState(0);
+  const [rateText, setRateText] = useState('');
+  const [rateBusy, setRateBusy] = useState(false);
+
+  const openRate = (order: any) => {
+    setRateFor(order);
+    setRateStars(Number(order.userRating) || 0);
+    setRateText('');
+  };
+
+  const submitOnlineRating = async () => {
+    if (!rateFor) return;
+    if (!rateStars) return toast.error('Please tap the stars first');
+    try {
+      setRateBusy(true);
+      await api.submitTableReview(code!, {
+        orderCode: rateFor.orderCode,
+        overallRating: rateStars,
+        reviewText: rateText.trim(),
+        itemRatings: [],
+      });
+      toast.success('Thanks for rating! ⭐');
+      setRateFor(null);
+      if (onlineIdentity) await checkOnlineStatus(onlineIdentity.phone);
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not save rating');
+    } finally {
+      setRateBusy(false);
+    }
   };
 
   // Ratings (HAVING_FOOD state)
@@ -475,6 +512,7 @@ export function PublicMenuView() {
           setOnlineOrder({
             orderCode: res.data?.orderCode || 'ORDER',
             orderStatus: 'ACTIVE',
+            paymentPending: true,
             customerName: onlineIdentity.name,
             customerPhone: onlineIdentity.phone,
             address: deliveryAddress,
@@ -686,6 +724,23 @@ export function PublicMenuView() {
             <p className="text-xs text-stone-500 mt-3">🔒 This order is confirmed and can't be modified. For a new order, use a different phone number.</p>
           </div>
 
+          {/* Payment pending: scan & pay for this exact order total */}
+          {o.paymentPending && (
+            <div className="rounded-3xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white p-5 shadow-sm text-center">
+              <p className="text-xs font-black uppercase tracking-wider text-amber-700">⏳ Payment Pending</p>
+              <p className="font-display font-bold text-3xl text-slate-900 mt-1">
+                {data.currencySymbol || 'Rs.'}{Number(o.total ?? 0).toFixed(2)}
+              </p>
+              <div className="inline-block mt-3 p-2.5 bg-white rounded-2xl border border-amber-200 shadow-sm">
+                <QRCodeSVG
+                  value={`upi://pay?pa=aaaaindia@ybl&pn=9986439557&cu=INR&am=${Number(o.total ?? 0).toFixed(2)}`}
+                  size={180}
+                />
+              </div>
+              <p className="text-[11px] text-stone-500 mt-2">Scan with any UPI app to pay for order {o.orderCode}.<br />Show this screen at delivery if needed.</p>
+            </div>
+          )}
+
           <div className="bg-white rounded-3xl border border-stone-200/80 p-5 shadow-sm">
             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">Your items</h3>
             <div className="space-y-2">
@@ -789,17 +844,17 @@ export function PublicMenuView() {
       <div
         key={priceOverride !== undefined ? `rec-${item.id}` : item.id}
         className={cn(
-          'bg-white rounded-2xl p-3.5 border transition-all duration-200 flex gap-3.5 items-center relative overflow-hidden group',
-          !available && 'opacity-60 grayscale',
+          'bg-white rounded-2xl border transition-all duration-200 relative overflow-hidden group flex flex-col',
+          !available && 'opacity-70',
           line
-            ? 'border-amber-400/80 shadow-md bg-amber-50/20'
+            ? 'border-amber-400/80 shadow-md'
             : 'border-stone-200/80 shadow-xs hover:border-stone-300 hover:shadow-sm'
         )}
       >
-        {/* Dish Thumbnail / Avatar (tap for full-screen detail) */}
+        {/* Full-width dish photo (tap for full-screen detail) */}
         <div
           onClick={() => setSelectedDish({ item, priceOverride })}
-          className="w-20 h-20 bg-stone-100 rounded-xl shrink-0 overflow-hidden relative border border-stone-100 cursor-pointer"
+          className="relative w-full h-44 bg-stone-100 overflow-hidden cursor-pointer shrink-0"
         >
           {item.image ? (
             <img
@@ -810,25 +865,27 @@ export function PublicMenuView() {
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-stone-100 text-stone-400">
-              <span className="font-display font-bold text-xl text-amber-800/60">
+              <span className="font-display font-bold text-4xl text-amber-800/60">
                 {item.name.charAt(0)}
               </span>
             </div>
           )}
-          <div className="absolute top-1.5 left-1.5">
+          <div className="absolute top-2 left-2">
             <DietIndicator name={item.name} category={item.category} />
           </div>
           {!available && (
-            <div className="absolute inset-x-0 bottom-0 bg-slate-900/80 text-white text-[9px] font-bold text-center py-0.5 uppercase tracking-wide">
-              Out of Stock
+            <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+              <span className="bg-slate-900/85 text-white text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wide">
+                Out of Stock
+              </span>
             </div>
           )}
         </div>
 
-        {/* Details & Price (tap name/desc for full-screen detail) */}
-        <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch py-0.5">
+        {/* Name, description, price below the photo */}
+        <div className="flex-1 flex flex-col p-3.5">
           <div onClick={() => setSelectedDish({ item, priceOverride })} className="cursor-pointer">
-            <h4 className="font-display font-bold text-slate-900 text-sm leading-snug truncate">
+            <h4 className="font-display font-bold text-slate-900 text-[15px] leading-snug">
               {item.name}
               {spice ? (
                 <span className="ml-1.5 text-xs" title={spiceTitle} role="img" aria-label={spiceTitle}>
@@ -837,9 +894,9 @@ export function PublicMenuView() {
               ) : null}
             </h4>
             {item.description ? (
-              <p className="text-[11px] text-stone-500 leading-snug mt-0.5 line-clamp-2">{item.description}</p>
+              <p className="text-xs text-stone-500 leading-relaxed mt-1 line-clamp-2">{item.description}</p>
             ) : alreadyOrderedQty ? (
-              <span className="inline-block text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded mt-0.5">
+              <span className="inline-block text-[10px] font-medium text-amber-700 bg-amber-100/70 px-1.5 py-0.2 rounded mt-1">
                 Ordered ×{alreadyOrderedQty} at table
               </span>
             ) : item.category ? (
@@ -849,8 +906,8 @@ export function PublicMenuView() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-            <div className="font-display font-bold text-slate-900 text-base">
+          <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-stone-100" onClick={(e) => e.stopPropagation()}>
+            <div className="font-display font-bold text-slate-900 text-lg">
               <span className="text-xs text-stone-500 mr-0.5">{currencySymbol || 'Rs.'}</span>
               {effPrice.toFixed(0)}
               {priceOverride !== undefined && Number(item.recDelta || 0) !== 0 && (
@@ -868,30 +925,30 @@ export function PublicMenuView() {
               <button
                 type="button"
                 onClick={() => addToCart({ ...item, id: cartId, price: effPrice })}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-display font-bold text-xs shadow-xs hover:shadow-sm transition-all flex items-center gap-1 active:scale-95"
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-display font-bold text-sm shadow-sm transition-all flex items-center gap-1 active:scale-95"
               >
-                <Plus className="w-3.5 h-3.5 stroke-[2.5]" /> Add
+                <Plus className="w-4 h-4 stroke-[2.5]" /> Add
               </button>
             ) : (
-              <div className="flex items-center bg-slate-900 text-white rounded-lg p-0.5 shadow-sm">
+              <div className="flex items-center bg-slate-900 text-white rounded-xl p-1 shadow-sm">
                 <button
                   type="button"
                   onClick={() => changeQty(line.id, -1)}
-                  className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
                   aria-label="Decrease quantity"
                 >
-                  {line.qty === 1 ? <Trash2 className="w-3 h-3 text-red-400" /> : <Minus className="w-3 h-3" />}
+                  {line.qty === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-400" /> : <Minus className="w-3.5 h-3.5" />}
                 </button>
-                <span className="font-bold text-xs w-6 text-center text-amber-300 font-mono">
+                <span className="font-bold text-sm w-7 text-center text-amber-300 font-mono">
                   {line.qty}
                 </span>
                 <button
                   type="button"
                   onClick={() => changeQty(line.id, 1)}
-                  className="w-6 h-6 flex items-center justify-center rounded text-white hover:bg-white/20 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-white hover:bg-white/20 transition-colors"
                   aria-label="Increase quantity"
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
@@ -993,6 +1050,68 @@ export function PublicMenuView() {
             <button onClick={switchOnlineUser} className="text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-lg shrink-0">
               Not you?
             </button>
+          </div>
+        )}
+
+        {/* Past completed orders: view + rate, while a fresh cart stays open */}
+        {isOnline && onlineIdentity && onlineHistory.length > 0 && (
+          <section className="space-y-2.5 rounded-3xl border border-stone-200/80 bg-white p-3.5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <h3 className="font-display font-bold text-sm uppercase tracking-wider text-slate-800">Your past orders</h3>
+              <span className="text-[11px] font-bold text-stone-500 bg-stone-200/60 px-2 py-0.5 rounded-full">{onlineHistory.length}</span>
+              <div className="flex-1 h-px bg-stone-200" />
+            </div>
+            {onlineHistory.map((h: any) => (
+              <div key={h.orderCode} className="rounded-2xl border border-stone-100 bg-stone-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 truncate">{h.orderCode}</p>
+                    <p className="text-[11px] text-stone-500">
+                      {(h.items || []).reduce((n: number, it: any) => n + Number(it.qty || 0), 0)} item(s) · {currencySymbol || 'Rs.'}{Number(h.total ?? 0).toFixed(2)} · {String(h.orderStatus || '').toUpperCase() === 'PAID' ? 'Paid ✓' : 'Delivered ✓'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openRate(h)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold flex items-center gap-1"
+                  >
+                    <Star className="w-3.5 h-3.5" /> {Number(h.userRating) ? `${h.userRating}★ Rated` : 'Rate'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* Rating sheet for a past online order */}
+        {rateFor && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-950/60" onClick={() => !rateBusy && setRateFor(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-display font-bold text-slate-900">Rate order {rateFor.orderCode}</h3>
+              <p className="text-xs text-stone-500 mt-0.5 mb-3">How was your food?</p>
+              <div className="flex items-center gap-1.5 mb-3">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button key={s} onClick={() => setRateStars(s)} aria-label={`${s} star`}>
+                    <Star className={cn('w-8 h-8', s <= rateStars ? 'text-amber-400 fill-amber-400' : 'text-gray-300')} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={rateText}
+                onChange={(e) => setRateText(e.target.value.slice(0, 250))}
+                placeholder="Optional comment…"
+                rows={2}
+                maxLength={250}
+                className="w-full px-3 py-2 border border-stone-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 resize-none"
+              />
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => !rateBusy && setRateFor(null)} className="flex-1 py-3 text-sm font-bold text-stone-500 hover:bg-stone-100 rounded-xl">
+                  Cancel
+                </button>
+                <button onClick={submitOnlineRating} disabled={rateBusy || !rateStars} className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+                  {rateBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Rating'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {/* ==================================================================== */}
@@ -1429,18 +1548,17 @@ export function PublicMenuView() {
           </div>
         </div>
 
-        {/* Today's Recommended — featured on top with adjusted prices */}
+        {/* Today's Recommended — always first, distinct deep-amber background */}
         {recommendedPicks.length > 0 && (
-          <section className="space-y-3 rounded-3xl border border-amber-300/70 bg-gradient-to-b from-amber-50 to-white p-3.5 shadow-sm">
-            <div className="flex items-center gap-2">
+          <section className="space-y-3 rounded-3xl border-2 border-amber-500 bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-3.5 shadow-md shadow-amber-500/20">
+            <div className="flex items-center gap-2 bg-slate-900/90 rounded-2xl px-3 py-2">
               <span className="text-base">⭐</span>
-              <h3 className="font-display font-bold text-sm uppercase tracking-wider text-amber-800">
+              <h3 className="font-display font-bold text-sm uppercase tracking-wider text-amber-300">
                 Today's Recommended
               </h3>
-              <span className="text-[11px] font-bold text-amber-700 bg-amber-200/70 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-bold text-slate-900 bg-amber-400 px-2 py-0.5 rounded-full">
                 {recommendedPicks.length}
               </span>
-              <div className="flex-1 h-px bg-amber-200" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {recommendedPicks.map((item: any) => (

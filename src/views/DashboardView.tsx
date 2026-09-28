@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { LayoutDashboard, Wallet, Users, Receipt, Smartphone, CreditCard, Trash2, X } from 'lucide-react';
+import { LayoutDashboard, Wallet, Users, Receipt, Smartphone, CreditCard, Trash2, X, Loader2 } from 'lucide-react';
 import { usePosStore } from '../store/usePosStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../lib/api';
@@ -23,10 +23,19 @@ export function DashboardView() {
   // a full fetchBootstrap(true) would flash the POS menu skeleton if the
   // user hops Dashboard -> POS mid-flight. POS itself only loads once
   // (on login / menu update), so never disturb isLoading here afterwards.
+  // `refreshing` drives a local loader so updates never appear silently.
+  const [refreshing, setRefreshing] = useState(true);
   useEffect(() => {
-    if (!usePosStore.getState().bootstrapped) fetchBootstrap(true);
-    else usePosStore.getState().refreshInBackground();
-    api.getExpenses().then((r: any) => setExpenses(r.data || [])).catch(() => {});
+    let alive = true;
+    setRefreshing(true);
+    const boot = !usePosStore.getState().bootstrapped
+      ? fetchBootstrap(true)
+      : usePosStore.getState().refreshInBackground();
+    Promise.allSettled([
+      boot,
+      api.getExpenses().then((r: any) => { if (alive) setExpenses(r.data || []); }).catch(() => {}),
+    ]).finally(() => { if (alive) setRefreshing(false); });
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -205,7 +214,19 @@ export function DashboardView() {
         </div>
       </div>
       
-      <div className="flex-1 overflow-auto p-4 sm:p-6 custom-scrollbar">
+      <div className="flex-1 overflow-auto p-4 sm:p-6 custom-scrollbar relative">
+        {refreshing && (orders?.length || 0) > 0 && (
+          <div className="absolute top-2 right-4 z-10 flex items-center gap-1.5 bg-slate-900/85 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-full shadow-lg">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…
+          </div>
+        )}
+        {refreshing && !(orders?.length) && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 sm:mb-6 animate-pulse">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-20 bg-gray-200 rounded-xl" />
+            ))}
+          </div>
+        )}
         {/* KPI Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 sm:mb-6">
           <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-brand-500 to-brand-600 p-4 rounded-xl shadow-sm text-white">
