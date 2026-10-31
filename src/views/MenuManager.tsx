@@ -5,11 +5,13 @@ import { Search, Plus, Edit2, Trash2, Package, ScanLine, X, Loader2, Image as Im
 import toast from 'react-hot-toast';
 import { cn } from '../lib/utils';
 import { BarcodeScannerModal } from '../components/BarcodeScanner';
+import { uploadToImageKit } from '../lib/imagekit';
 
 export function MenuManager() {
   const { menuItems, categories, settings, fetchBootstrap } = usePosStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [quickCategory, setQuickCategory] = useState('');
@@ -189,15 +191,23 @@ export function MenuManager() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, image: reader.result as string });
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      setIsUploadingImage(true);
+      try {
+        const url = await uploadToImageKit(reader.result as string, undefined, file.name);
+        setFormData(prev => ({ ...prev, image: url }));
+        toast.success('Image uploaded');
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to upload image');
+      } finally {
+        setIsUploadingImage(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   if (isEditing) {
@@ -256,9 +266,18 @@ export function MenuManager() {
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="flex-1 flex gap-2">
                     <label className="flex-1 px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-center font-medium shadow-sm whitespace-nowrap">
-                      <Camera className="w-4 h-4 mr-2" />
-                      <span className="text-sm">Upload Photo</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      {isUploadingImage ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <span className="text-sm">Uploading…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-4 h-4 mr-2" />
+                          <span className="text-sm">Upload Photo</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploadingImage} />
                     </label>
                   </div>
                   <div className="hidden sm:block w-px h-8 bg-gray-200"></div>
