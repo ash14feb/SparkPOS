@@ -1,4 +1,5 @@
 const IMAGEKIT_PRIVATE_KEY = import.meta.env.VITE_IMAGEKIT_PRIVATE_KEY || 'YOUR_DEFAULT_IMAGEKIT_PRIVATE_KEY';
+const IMAGEKIT_URL_ENDPOINT = (import.meta.env.VITE_IMAGEKIT_URL_ENDPOINT || '').replace(/\/+$/, '');
 
 export async function uploadToImageKit(base64Image: string, onStatusChange?: (status: string) => void, fileName?: string) {
   try {
@@ -28,7 +29,9 @@ export async function uploadToImageKit(base64Image: string, onStatusChange?: (st
     }
 
     if (onStatusChange) onStatusChange('complete');
-    return result.url;
+    const filePath = (result.filePath || '').replace(/^\/+/, '');
+    if (!IMAGEKIT_URL_ENDPOINT || !filePath) return result.url;
+    return `${IMAGEKIT_URL_ENDPOINT}/${filePath}`;
   } catch (error) {
     if (onStatusChange) onStatusChange('error');
     throw error;
